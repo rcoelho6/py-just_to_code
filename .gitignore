@@ -1,11 +1,43 @@
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
-.pytest_cache/
+*.pyo
+*.pyd
+
+# Virtual environments
 .venv/
 venv/
-*.egg-info/
-tasks.db
-instance/
+env/
+
+# Environment files
 .env
+.env.*
+
+# Test and coverage artifacts
+.pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+
+# Build / distribution
+build/
+dist/
+*.egg-info/
+
+# Local database files
+*.db
+*.sqlite3
+tasks.db
+
+# Flask / app instance
+instance/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

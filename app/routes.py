@@ -6,7 +6,6 @@ from . import get_session
 from .models import Task, ValidationError, task_dto
 from .services import TaskNotFoundError, TaskService
 
-
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 
 

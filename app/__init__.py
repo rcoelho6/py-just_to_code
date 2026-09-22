@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from flask import Flask
 from sqlalchemy import create_engine
