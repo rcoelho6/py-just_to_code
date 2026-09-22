@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
+from app.application.ports import TaskIncomeBoundary
 from app.usecases.domain.entities import Task, TaskValidationError
-from app.usecases.services.services import TaskNotFoundError, TaskService
+from app.usecases.services.services import TaskNotFoundError
 
 
-def create_tasks_blueprint(service: TaskService) -> Blueprint:
+def create_tasks_blueprint(service: TaskIncomeBoundary) -> Blueprint:
     blueprint = Blueprint("tasks", __name__, url_prefix="/tasks")
 
     @blueprint.route("", methods=["POST"])
