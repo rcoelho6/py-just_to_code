@@ -10,13 +10,12 @@ Este manual explica o código do projeto Flask que replica o POC `just_to_code`,
 |---|---|
 | `run.py` | Inicia o servidor Flask. |
 | `app/__init__.py` | Composition root: cria Flask, SQLite, repositório, serviço e Blueprint. |
-| `app/usecases/domain` | Entidade `Task` e regras de validação, sem dependências externas. |
-| `app/usecases/ports` | Contrato `TaskRepository` usado pela aplicação. |
-| `app/usecases/services` | Casos de uso de criação e atualização. |
+| `../app/usecases/domain` | Entidade `Task` e regras de validação, sem dependências externas. |
+| `../app/usecases/services` | Contrato `TaskRepository` usado pela aplicação. |
+| `../app/usecases/services` | Casos de uso de criação e atualização. |
 | `app/infrastructure/persistence/models.py` | Modelo Peewee ligado à tabela SQLite. |
 | `app/infrastructure/persistence/repositories.py` | Adapta Peewee ao contrato do repositório. |
-| `app/application/ports.py` | Porta `TaskIncomeBoundary` entre o controller e os serviços. |
-| `app/application/http` | Traduz HTTP/JSON para chamadas da porta de entrada. |
+| `../app/application` | Traduz HTTP/JSON para chamadas do serviço. |
 | `tests/test_tasks.py` | Testa a API usando o cliente de testes do Flask. |
 
 O fluxo de uma criação é:
@@ -24,12 +23,11 @@ O fluxo de uma criação é:
 ```text
 Cliente HTTP
   -> POST /tasks
-  -> Blueprint criado por app/application/http/routes.py
-  -> Entidade Task em app/usecases/domain/entities.py
-  -> TaskIncomeBoundary em app/application/ports.py
-  -> TaskService em app/usecases/services/services.py
-  -> TaskRepository em app/usecases/ports/ports.py
-  -> PeeweeTaskRepository em app/infrastructure/persistence
+  -> Blueprint criado por app/interfaces/http/routes.py
+  -> Entidade Task em app/domain/entities.py
+  -> TaskService em app/application/services.py
+  -> TaskRepository em app/application/ports.py
+  -> PeeweeTaskRepository em infrastructure/persistence
   -> SQLite: INSERT na tabela task
   -> Resposta JSON 201 + Location: /tasks/{id}
 ```
@@ -53,7 +51,7 @@ A aplicação fica disponível em `http://localhost:8080`. Para criar uma tarefa
 
 ```bash
 curl -i -X POST http://localhost:8080/tasks \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: services/json' \
   -d '{"description":"Estudar Peewee","priority":1}'
 ```
 
@@ -100,10 +98,10 @@ A configuração `DATABASE_URL` vem de variável de ambiente quando existir. Cas
 
 ### 3.2 Blueprints e rotas
 
-As rotas de tarefas são criadas por uma fábrica de Blueprint. A fábrica recebe `TaskIncomeBoundary` como dependência:
+As rotas de tarefas são criadas por uma fábrica de Blueprint. A fábrica recebe `TaskService` como dependência:
 
 ```python
-def create_tasks_blueprint(service: TaskIncomeBoundary) -> Blueprint:
+def create_tasks_blueprint(service: TaskService) -> Blueprint:
     blueprint = Blueprint("tasks", __name__, url_prefix="/tasks")
     ...
     return blueprint

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.application.ports import TaskIncomeBoundary
 from app.usecases.services.services import TaskNotFoundError, TaskService
 from app.usecases.domain.entities import Task
 
@@ -31,12 +30,6 @@ def test_service_creates_without_knowing_the_persistence_technology():
 
     assert created.id == 1
     assert repository.tasks[1] == created
-
-
-def test_service_implements_the_application_input_port():
-    service = TaskService(InMemoryTaskRepository({}))
-
-    assert isinstance(service, TaskIncomeBoundary)
 
 
 def test_service_updates_only_when_values_change():

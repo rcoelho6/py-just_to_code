@@ -4,8 +4,6 @@ Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/jus
 
 Esta branch, `feature/layered-architecture`, reorganiza a implementação Peewee em camadas inspiradas na arquitetura do projeto Java de origem. O domínio não conhece Flask ou Peewee, a aplicação depende de uma porta de persistência e a infraestrutura fornece a implementação concreta para SQLite.
 
-O controller em `app/application/http` depende da porta `TaskIncomeBoundary`, definida em `app/application/ports.py`. O `TaskService`, localizado em `app/usecases/services`, implementa essa porta. Assim, a camada HTTP não depende diretamente da classe concreta de serviço.
-
 ## Escopo preservado
 
 A branch de origem é um POC de API REST com o módulo de tarefas. O contrato disponível foi mantido:
