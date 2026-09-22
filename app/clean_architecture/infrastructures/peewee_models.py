@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from peewee import AutoField, IntegerField, Model, TextField
 
-from app.clean_architecture.domain.task import Task
+from app.clean_architecture.usecases.domains import Task
 
 
 class PeeweeBaseModel(Model):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from app.clean_architecture.domain.task import Task
+from app.clean_architecture.usecases.domains import Task
 
 
 class TaskDatasourceBoundary(Protocol):
@@ -20,7 +20,7 @@ class TaskDatasourceBoundary(Protocol):
 
 @runtime_checkable
 class TaskIncomeBoundary(Protocol):
-    """Input boundary exposed to delivery adapters."""
+    """Input boundary exposed to delivery applications."""
 
     def create(self, task: Task) -> Task:
         ...

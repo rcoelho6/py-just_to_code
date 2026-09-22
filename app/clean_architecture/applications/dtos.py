@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.clean_architecture.domain.task import Task
+from app.clean_architecture.usecases.domains import Task
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,10 +4,10 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from app.clean_architecture.adapters.presenters import TaskDto, error_to_dto, task_to_dto
-from app.clean_architecture.domain.task import TaskValidationError
+from app.clean_architecture.applications.dtos import TaskDto, error_to_dto, task_to_dto
+from app.clean_architecture.usecases.domains import TaskValidationError
 from app.clean_architecture.usecases.ports import TaskIncomeBoundary
-from app.clean_architecture.usecases.task_service import TaskNotFoundError
+from app.clean_architecture.usecases.service import TaskNotFoundError
 
 
 def create_tasks_blueprint(task_income_boundary: TaskIncomeBoundary) -> Blueprint:

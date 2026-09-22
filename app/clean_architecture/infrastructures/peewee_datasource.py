@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from peewee import Database
 
-from app.clean_architecture.domain.task import Task
-from app.clean_architecture.frameworks.peewee_models import TaskModel
-from app.clean_architecture.usecases.task_service import TaskNotFoundError
+from app.clean_architecture.usecases.domains import Task
+from app.clean_architecture.infrastructures.peewee_models import TaskModel
+from app.clean_architecture.usecases.service import TaskNotFoundError
 
 
 class PeeweeTaskDatasource:

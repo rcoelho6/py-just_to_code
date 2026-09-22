@@ -1,7 +1,7 @@
 import pytest
 
 from app import create_app
-from app.clean_architecture.frameworks.peewee_models import TaskModel
+from app.clean_architecture.infrastructures.peewee_models import TaskModel
 
 
 @pytest.fixture

@@ -14,8 +14,8 @@ Nesta implementação, os círculos são:
 |---|---|---|
 | Domínio | `app/clean_architecture/domain` | Entidade `Task` e validações invariantes. |
 | Casos de uso | `app/clean_architecture/usecases` | Boundaries e `TaskService`. |
-| Adaptadores | `app/clean_architecture/adapters` | Controller Flask e presenters. |
-| Frameworks | `app/clean_architecture/frameworks` | Modelo Peewee, SQLite e datasource. |
+| Adaptadores | `../app/clean_architecture/applications` | Controller Flask e presenters. |
+| Frameworks | `../app/clean_architecture/infrastructures` | Modelo Peewee, SQLite e datasource. |
 | Composição | `app/__init__.py` | Montagem das dependências concretas. |
 
 O caminho de uma requisição é:
@@ -34,7 +34,7 @@ HTTP/JSON
 
 ## 2. Domínio
 
-O domínio está em `app/clean_architecture/domain/task.py`. A entidade é uma dataclass imutável:
+O domínio está em `../app/clean_architecture/usecases/domains.py`. A entidade é uma dataclass imutável:
 
 ```python
 @dataclass(frozen=True, slots=True)

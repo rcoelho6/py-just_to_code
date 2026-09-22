@@ -2,9 +2,9 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.clean_architecture.domain.task import Task, TaskValidationError
+from app.clean_architecture.usecases.domains import Task, TaskValidationError
 from app.clean_architecture.usecases.ports import TaskIncomeBoundary
-from app.clean_architecture.usecases.task_service import TaskNotFoundError, TaskService
+from app.clean_architecture.usecases.service import TaskNotFoundError, TaskService
 
 
 @dataclass

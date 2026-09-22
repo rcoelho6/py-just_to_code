@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.clean_architecture.domain.task import Task
+from app.clean_architecture.usecases.domains import Task
 from app.clean_architecture.usecases.ports import TaskDatasourceBoundary, TaskIncomeBoundary
 
 
