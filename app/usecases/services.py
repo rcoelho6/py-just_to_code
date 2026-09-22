@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from app.application.ports import TaskIncomeBoundary
-from app.usecases.domain.entities import Task
-from app.usecases.ports.ports import TaskRepository
-
-
-class TaskNotFoundError(LookupError):
-    """Raised when an operation references a missing task."""
+from app.usecases.domains import Task
+from app.usecases.ports import TaskRepository, TaskNotFoundError, TaskIncomeBoundary
 
 
 class TaskService(TaskIncomeBoundary):

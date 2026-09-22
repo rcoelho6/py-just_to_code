@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from app.application.ports import TaskIncomeBoundary
-from app.usecases.domain.entities import Task, TaskValidationError
-from app.usecases.services.services import TaskNotFoundError
+from app.usecases.ports import TaskIncomeBoundary, TaskNotFoundError
+from app.usecases.domains import Task, TaskValidationError
 
 
 def create_tasks_blueprint(service: TaskIncomeBoundary) -> Blueprint:

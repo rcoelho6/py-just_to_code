@@ -2,9 +2,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.application.ports import TaskIncomeBoundary
-from app.usecases.services.services import TaskNotFoundError, TaskService
-from app.usecases.domain.entities import Task
+from app.usecases.services import TaskNotFoundError, TaskService, TaskIncomeBoundary
+from app.usecases.domains import Task
 
 
 @dataclass
