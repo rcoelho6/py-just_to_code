@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from peewee import AutoField, IntegerField, Model, TextField
 
 from . import Base
-from peewee import AutoField, IntegerField, Model, TextField
 
 
 class ValidationError(ValueError):
