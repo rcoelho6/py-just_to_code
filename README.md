@@ -47,6 +47,10 @@ DATABASE_URL='sqlite:///tasks.db' python run.py
 pytest
 ```
 
+## Manual de estudo
+
+O manual [tips/manual.md](tips/manual.md) explica toda a implementação, o fluxo de uma requisição Flask, Blueprints, sessões, transações, SQLAlchemy, SQLite, testes e as diferenças em relação ao projeto Java original.
+
 ## Licença
 
 O projeto de origem declara licença MIT. Este port preserva a mesma intenção; consulte o repositório de origem para o texto legal completo.
