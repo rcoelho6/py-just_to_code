@@ -1,7 +1,7 @@
 import pytest
 
 from app import create_app
-from app.models import Task
+from app.hexagonal.adapters.outbound.peewee import TaskRecord
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def test_create_returns_201_location_and_persists(client):
     assert response.headers["Location"] == "/tasks/1"
     assert response.json == {"description": "created", "priority": 5}
 
-    task = Task.get_by_id(1)
+    task = TaskRecord.get_by_id(1)
     assert task.description == "created"
     assert task.priority == 5
 

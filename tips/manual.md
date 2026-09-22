@@ -1,458 +1,222 @@
-# Manual de estudo do `py-just_to_code` com Peewee
+# Manual de estudo: Hexagonal Architecture com Flask, Peewee e SQLite
 
-Este manual explica o código do projeto Flask que replica o POC `just_to_code`, originalmente implementado com Spring Boot, Spring Data JPA e H2. Nesta branch, `feature/orm-peewee`, o acesso ao SQLite é feito pelo **Peewee**, um ORM pequeno e direto para Python.
+Este manual descreve a branch `feature/hexagonal-architecture`. A implementação foi criada a partir de `feature/orm-peewee`, usando como referências as branches `feature/clean-architecture` e `feature/layered-architecture`. O objetivo é mostrar como proteger o núcleo da aplicação contra detalhes externos por meio de portas e adaptadores.
 
-> **Resumo:** a aplicação expõe `POST /tasks` para criar tarefas e `PUT /tasks/{id}` para atualizá-las. O projeto original não implementava listagem, consulta individual nem exclusão; por isso essas operações continuam fora do escopo.
+## 1. O que é arquitetura hexagonal
 
-## 1. Arquitetura
+Na arquitetura hexagonal, o núcleo da aplicação fica no centro e se comunica com o exterior através de portas. Adaptadores traduzem protocolos externos para essas portas. O desenho não depende de a aplicação ter literalmente seis lados; o hexágono representa a possibilidade de conectar diferentes tecnologias ao mesmo núcleo.
 
-| Arquivo | Responsabilidade |
-|---|---|
-| `run.py` | Inicia o servidor Flask. |
-| `app/__init__.py` | Cria a aplicação, configura o SQLite e controla conexões por requisição. |
-| `app/routes.py` | Define rotas HTTP, lê JSON e monta respostas. |
-| `app/models.py` | Define a tabela Peewee, valida dados e converte respostas. |
-| `app/services.py` | Executa criação e atualização dentro de transações Peewee. |
-| `tests/test_tasks.py` | Testa a API usando o cliente de testes do Flask. |
+Há dois tipos principais de porta:
 
-O fluxo de uma criação é:
+- **Driving port**, ou porta de entrada: expõe casos de uso para algo que dirige a aplicação, como HTTP, CLI ou mensagens.
+- **Driven port**, ou porta de saída: descreve algo que o núcleo precisa que o ambiente externo faça, como persistir dados ou publicar eventos.
+
+Nesta branch:
+
+| Elemento | Caminho | Papel |
+|---|---|---|
+| Domínio | `app/hexagonal/domain/entities.py` | Regras e entidade `Task`. |
+| Porta de entrada | `app/hexagonal/ports/inbound.py` | `TaskUseCasePort`. |
+| Porta de saída | `app/hexagonal/ports/outbound.py` | `TaskRepositoryPort`. |
+| Aplicação | `app/hexagonal/application/services.py` | `TaskService`. |
+| Adaptador inbound | `app/hexagonal/adapters/inbound/http.py` | Flask e JSON. |
+| Adaptador outbound | `app/hexagonal/adapters/outbound/peewee.py` | Peewee e SQLite. |
+| Composição | `app/__init__.py` | Liga portas e adaptadores. |
+
+O fluxo completo de uma criação é:
 
 ```text
 Cliente HTTP
-  -> POST /tasks
-  -> Blueprint em app/routes.py
-  -> build_task e validação em app/models.py
-  -> TaskService em app/services.py
-  -> Peewee Session/Database
-  -> SQLite: INSERT na tabela task
-  -> Resposta JSON 201 + Location: /tasks/{id}
+  -> adapters/inbound/http.py
+  -> ports/inbound.py: TaskUseCasePort
+  -> application/services.py: TaskService
+  -> ports/outbound.py: TaskRepositoryPort
+  -> adapters/outbound/peewee.py
+  -> Peewee/SQLite
 ```
 
-## 2. Preparar e executar
+A seta representa uma chamada em tempo de execução. A dependência de código aponta para o núcleo: o adaptador HTTP depende da porta de entrada, e o adaptador Peewee implementa a porta de saída. O núcleo não importa Flask ou Peewee.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[test]'
-python run.py
-```
+## 2. Domínio
 
-A aplicação fica disponível em `http://localhost:8080`. Para criar uma tarefa:
-
-```bash
-curl -i -X POST http://localhost:8080/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"description":"Estudar Peewee","priority":1}'
-```
-
-A resposta esperada é semelhante a:
-
-```http
-HTTP/1.1 201 CREATED
-Location: /tasks/1
-Content-Type: application/json
-
-{"description":"Estudar Peewee","priority":1}
-```
-
-Execute os testes com:
-
-```bash
-pytest
-```
-
-## 3. Como o Flask funciona
-
-### 3.1 Application Factory
-
-O objeto principal do Flask é criado por `create_app` em `app/__init__.py`:
+`domain/entities.py` contém a entidade pura:
 
 ```python
-app = Flask(__name__)
+@dataclass(frozen=True, slots=True)
+class Task:
+    description: str
+    priority: int
+    id: int | None = None
 ```
 
-O projeto usa o padrão **application factory**. Isso significa que a função cria uma nova aplicação sempre que é chamada. Assim, os testes podem usar um banco temporário sem alterar o banco de desenvolvimento.
+A entidade usa `frozen=True` para evitar mutações acidentais e `slots=True` para manter uma estrutura compacta. `__post_init__` valida as invariantes: um identificador existente deve ser positivo, a descrição deve conter texto e a prioridade deve ser um inteiro não negativo.
+
+`TaskValidationError` também pertence ao domínio. Ele não sabe que uma requisição HTTP deve retornar `400`; essa tradução é responsabilidade do adaptador Flask.
 
 ```python
-def create_app(test_config: dict | None = None) -> Flask:
-    app = Flask(__name__)
-    app.config.from_mapping(
-        DATABASE_URL=os.getenv("DATABASE_URL", "sqlite:///tasks.db"),
-        TESTING=False,
-    )
-    if test_config:
-        app.config.update(test_config)
+if not isinstance(self.description, str) or not self.description.strip():
+    raise TaskValidationError("Description cannot be null or blank")
 ```
 
-A configuração `DATABASE_URL` vem de variável de ambiente quando existir. Caso contrário, o arquivo padrão é `tasks.db`.
+Esse isolamento permite executar testes do domínio sem inicializar Flask, conectar SQLite ou instalar um ORM.
 
-### 3.2 Blueprints e rotas
+## 3. Porta de entrada
 
-As rotas de tarefas ficam em um Blueprint:
+`ports/inbound.py` define o contrato usado pelos adaptadores que dirigem o núcleo:
 
 ```python
-tasks_bp = Blueprint("tasks", __name__, url_prefix="/tasks")
+@runtime_checkable
+class TaskUseCasePort(Protocol):
+    def create(self, task: Task) -> Task:
+        ...
+
+    def update(self, task: Task) -> None:
+        ...
 ```
 
-O Blueprint é registrado na aplicação com `app.register_blueprint(tasks_bp)`. O prefixo evita repetir `/tasks` em cada definição.
-
-A criação aceita `/tasks` e `/tasks/`:
+`Protocol` fornece tipagem estrutural. O adaptador não precisa conhecer a classe concreta `TaskService`; precisa apenas de um objeto com `create` e `update`. `runtime_checkable` permite verificar essa relação em teste:
 
 ```python
-@tasks_bp.route("", methods=["POST"])
-@tasks_bp.route("/", methods=["POST"])
-def create():
+assert isinstance(service, TaskUseCasePort)
+```
+
+Essa porta é o lado de entrada do hexágono. Uma futura CLI, consumer de fila ou outro framework web pode ser criado sem modificar o serviço.
+
+## 4. Porta de saída
+
+`ports/outbound.py` define o contrato que o serviço precisa para persistir tarefas:
+
+```python
+class TaskRepositoryPort(Protocol):
+    def create(self, task: Task) -> Task:
+        ...
+
+    def find(self, task_id: int) -> Task | None:
+        ...
+
+    def update(self, task: Task) -> Task:
+        ...
+```
+
+Essa é uma porta driven. O núcleo chama seus métodos, mas não decide se a implementação usará SQLite, PostgreSQL, uma API remota ou um dicionário em memória.
+
+A porta de saída recebe e retorna a entidade de domínio. Isso evita que um modelo Peewee atravesse a fronteira do hexágono.
+
+## 5. Serviço da aplicação
+
+`application/services.py` contém `TaskService`, que implementa a porta de entrada e recebe a porta de saída no construtor:
+
+```python
+class TaskService(TaskUseCasePort):
+    def __init__(self, repository: TaskRepositoryPort):
+        self._repository = repository
+```
+
+Na criação, o serviço delega a persistência ao repository port. Na atualização, procura a tarefa pelo ID. Se não encontrar, levanta `TaskNotFoundError`. Se os valores não mudaram, encerra sem executar uma gravação; caso contrário, chama `update`.
+
+```python
+existing = self._repository.find(task.id)
+if existing is None:
+    raise TaskNotFoundError("ID not found")
+if existing.description == task.description and existing.priority == task.priority:
+    return
+self._repository.update(task)
+```
+
+O serviço não importa Flask, `request`, `jsonify`, Peewee ou `SqliteDatabase`. Esse é o centro da diferença em relação a uma implementação acoplada ao framework.
+
+## 6. Adaptador inbound HTTP
+
+`adapters/inbound/http.py` implementa o lado HTTP. `create_tasks_blueprint` recebe `TaskUseCasePort`:
+
+```python
+def create_tasks_blueprint(task_use_case: TaskUseCasePort) -> Blueprint:
     ...
 ```
 
-A atualização captura um número da URL:
+O adaptador lê JSON, constrói `Task`, chama a porta e converte a resposta para JSON. Ele também traduz exceções para códigos HTTP. O adaptador conhece Flask e o formato da API, mas não cria o repository nem conhece a tabela do banco.
+
+A rota de criação aceita `POST /tasks` e `POST /tasks/`, retorna `201` e inclui `Location: /tasks/{id}`. A rota de atualização aceita `PUT /tasks/{id}` e retorna `200`. `GET` e `DELETE` permanecem indisponíveis porque não faziam parte do contrato original.
+
+A função `_task_from_payload` é uma pequena tradução de entrada. A entidade valida os dados depois que o payload é convertido; assim, a regra não fica duplicada no controller.
+
+## 7. Adaptador outbound Peewee
+
+`adapters/outbound/peewee.py` contém três responsabilidades externas: o modelo `TaskRecord`, a conversão para domínio e `PeeweeTaskRepository`.
+
+`TaskRecord` representa a tabela:
 
 ```python
-@tasks_bp.route("/<int:task_id>", methods=["PUT"])
-def update(task_id: int):
-    ...
-```
-
-O conversor `<int:task_id>` faz o Flask entregar o identificador como inteiro à função.
-
-### 3.3 JSON, status e cabeçalhos
-
-`request.is_json` verifica se o cliente informou um corpo JSON. Em seguida, `request.get_json(silent=True)` converte o corpo para um dicionário Python.
-
-`jsonify` converte dicionários Python para JSON:
-
-```python
-return jsonify({"description": "Estudar", "priority": 1}), 200
-```
-
-Na criação, a resposta é construída para incluir o identificador do novo registro:
-
-```python
-response = jsonify(task_dto(task))
-response.status_code = 201
-response.headers["Location"] = f"/tasks/{task.id}"
-return response
-```
-
-O status `201` significa que um recurso foi criado. O cabeçalho `Location` informa o endereço desse recurso.
-
-### 3.4 Ciclo de vida da conexão
-
-O Flask permite executar funções antes e depois de cada requisição. Este projeto abre o SQLite antes da requisição:
-
-```python
-@app.before_request
-def open_database_connection():
-    if database.is_closed():
-        database.connect()
-```
-
-Depois, fecha a conexão:
-
-```python
-@app.teardown_request
-def close_database_connection(_exception=None):
-    if not database.is_closed():
-        database.close()
-```
-
-O objetivo é não manter uma conexão aberta indefinidamente. Cada requisição usa a conexão necessária e a libera ao terminar.
-
-### 3.5 Tratamento de erros
-
-A função `error_response` garante um formato único:
-
-```python
-def error_response(message: str, status: int):
-    return jsonify({"message": message, "status": status}), status
-```
-
-Erros de validação retornam `400`. Quando o identificador não existe, o serviço levanta `TaskNotFoundError` e a rota retorna `404`. Falhas inesperadas retornam `500`.
-
-Os handlers de `405` e `404` também retornam JSON. Por isso, métodos ainda não implementados não produzem uma página HTML padrão do Flask.
-
-## 4. Como o SQLite funciona
-
-SQLite é um banco relacional embutido. Ele não precisa de um servidor separado. A base de dados fica em um arquivo, neste caso `tasks.db`.
-
-Ele ainda possui tabelas, colunas, chaves, consultas e transações. A diferença é que o mecanismo roda dentro do processo da aplicação, e não como um serviço independente.
-
-A URL padrão é:
-
-```python
-sqlite:///tasks.db
-```
-
-O prefixo `sqlite` define o banco. Os três caracteres `/` indicam um caminho relativo, e `tasks.db` é o arquivo.
-
-Para escolher outro arquivo:
-
-```bash
-DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
-```
-
-Para um caminho absoluto no Linux:
-
-```bash
-DATABASE_URL='sqlite:////tmp/py-just-to-code.db' python run.py
-```
-
-Nesta branch, `_sqlite_path` converte a URL para o formato de caminho que o Peewee espera. A implementação rejeita outros bancos porque o objetivo desta branch é estudar Peewee com SQLite.
-
-## 5. Como o Peewee funciona
-
-### 5.1 Database
-
-O objeto `SqliteDatabase` representa a conexão e as operações com o arquivo SQLite:
-
-```python
-database = SqliteDatabase(
-    _sqlite_path(app.config["DATABASE_URL"]),
-    pragmas={"foreign_keys": 1},
-)
-```
-
-O pragma `foreign_keys` instrui o SQLite a respeitar restrições de chave estrangeira. O modelo atual não possui uma relação, mas deixar essa opção ativa é uma configuração segura para futuras tabelas relacionadas.
-
-A aplicação registra o objeto no `app.extensions`:
-
-```python
-app.extensions["database"] = database
-```
-
-As extensões do Flask são um local apropriado para guardar recursos ligados à aplicação. `get_database()` recupera esse objeto usando `current_app`.
-
-### 5.2 Model e tabela
-
-No Peewee, uma classe que herda de `Model` representa uma tabela. O projeto define uma classe base:
-
-```python
-class BaseModel(Model):
-    class Meta:
-        database = None
-```
-
-Depois define a tabela de tarefas:
-
-```python
-class Task(BaseModel):
+class TaskRecord(PeeweeBaseModel):
     id = AutoField()
     description = TextField(null=False)
     priority = IntegerField(null=False)
-
-    class Meta:
-        table_name = "task"
 ```
 
-As colunas correspondem a:
+O método `to_domain` impede que o objeto Peewee escape para o núcleo. O repository usa `TaskRecord.create`, `get_or_none` e `save`, mas expõe apenas a interface `TaskRepositoryPort`.
 
-- `AutoField`: chave primária inteira gerada automaticamente.
-- `TextField`: texto da descrição.
-- `IntegerField`: prioridade inteira.
-- `null=False`: a coluna não pode receber `NULL`.
-
-A aplicação liga o modelo ao banco criado para aquela instância:
+A persistência ocorre em transações:
 
 ```python
-database.bind([Task], bind_refs=False, bind_backrefs=False)
+with self._database.atomic():
+    record = TaskRecord.create(
+        description=task.description,
+        priority=task.priority,
+    )
 ```
 
-Essa ligação é especialmente útil nos testes, porque cada aplicação pode usar um arquivo SQLite diferente.
+Se o bloco falhar, o Peewee faz rollback. Esse detalhe pertence ao adaptador outbound, não ao serviço.
 
-### 5.3 Criação da tabela
+## 8. Composition root
 
-Depois de vincular o modelo, a aplicação abre o banco e cria a tabela se ela ainda não existir:
+`app/__init__.py` é o ponto de composição. Ele cria o Flask e o SQLite, associa `TaskRecord` ao banco e monta o grafo de dependências:
 
 ```python
-database.connect(reuse_if_open=True)
-database.create_tables([Task])
-database.close()
+repository = PeeweeTaskRepository(database)
+task_use_case = TaskService(repository)
+app.register_blueprint(create_tasks_blueprint(task_use_case))
 ```
 
-`create_tables` não é um sistema completo de migrações. Ele cria tabelas ausentes, mas não controla mudanças complexas em tabelas existentes. Em uma aplicação maior, use migrações versionadas, por exemplo com Peewee Migrate.
+Esse é o único lugar que conhece simultaneamente Flask, `TaskService`, `PeeweeTaskRepository` e `TaskRecord`. A composição é explícita, substituindo a descoberta automática de dependências do Spring.
 
-### 5.4 Inserção
+Durante uma requisição, `before_request` abre a conexão quando necessário e `teardown_request` fecha a conexão. O arquivo padrão é `tasks.db`; `DATABASE_URL` permite selecionar outro arquivo SQLite.
 
-No serviço, uma tarefa é inserida assim:
+## 9. Testes
 
-```python
-with self.database.atomic():
-    task.save(force_insert=True)
-```
+`tests/test_hexagonal.py` testa o domínio e o serviço com `InMemoryRepository`. Esse repositório implementa a porta de saída sem Peewee. Os testes demonstram que:
 
-`save` gera um `INSERT` e atualiza `task.id` com o valor gerado pelo SQLite. `force_insert=True` deixa explícito que a operação deve ser uma inserção, e não uma tentativa de atualização de um registro existente.
+1. O domínio pode ser usado isoladamente.
+2. O serviço implementa a porta de entrada.
+3. O serviço cria e atualiza por meio da porta de saída.
+4. Uma tarefa inexistente produz `TaskNotFoundError`.
 
-O bloco `atomic()` abre uma transação. Se o bloco termina normalmente, a transação é confirmada. Se uma exceção ocorre, a transação é revertida.
+`tests/test_tasks.py` testa os dois adaptadores juntos: o Flask real chama o serviço e o repository Peewee persiste em um SQLite temporário. Assim, existe uma camada de testes unitários do núcleo e outra de integração dos adaptadores.
 
-### 5.5 Consulta
-
-O serviço procura um registro com:
-
-```python
-existing = Task.get_or_none(Task.id == task.id)
-```
-
-O Peewee transforma essa expressão em uma consulta SQL parametrizada parecida com:
-
-```sql
-SELECT id, description, priority
-FROM task
-WHERE id = ?
-LIMIT 1;
-```
-
-`get_or_none` retorna um objeto `Task` quando encontra o registro e `None` quando não encontra. Por isso, o serviço pode converter ausência em `TaskNotFoundError`.
-
-Também é possível consultar diretamente no interpretador Python:
-
-```python
-task = Task.get_by_id(1)
-print(task.description)
-```
-
-### 5.6 Atualização
-
-Quando os valores mudaram, o serviço altera o objeto carregado e salva apenas as colunas modificadas:
-
-```python
-existing.description = task.description
-existing.priority = task.priority
-existing.save(only=[Task.description, Task.priority])
-```
-
-O Peewee gera um `UPDATE` usando a chave primária do objeto. O argumento `only` deixa claro que o identificador não deve ser alterado.
-
-Se os valores já são iguais, o serviço retorna sem executar `UPDATE`. Essa otimização preserva o comportamento da aplicação Java original.
-
-### 5.7 Transações e rollback
-
-O bloco:
-
-```python
-with database.atomic():
-    ...
-```
-
-é a forma recomendada de agrupar operações relacionadas no Peewee. Uma criação ou atualização deve ser totalmente confirmada ou totalmente desfeita.
-
-No caso de um erro, o contexto `atomic()` faz rollback automaticamente. Isso é diferente do código anterior com SQLAlchemy, que exigia chamar `session.rollback()` diretamente nas rotas.
-
-## 6. Validação e contrato da API
-
-A função `validate_task` rejeita descrição nula, descrição em branco, prioridade ausente, prioridade booleana e prioridade negativa. A função `build_task` também exige um identificador positivo quando está construindo uma atualização.
-
-A validação fica fora do modelo Peewee porque os campos do ORM também podem ser usados por consultas e operações internas. `build_task` é o ponto explícito que transforma dados recebidos pela API em uma tarefa validada.
-
-`task_dto` limita a resposta aos campos públicos do contrato:
-
-```python
-def task_dto(task: Task) -> dict:
-    return {
-        "description": task.description,
-        "priority": task.priority,
-    }
-```
-
-O `id` não aparece no corpo porque a API original o comunicava pelo cabeçalho `Location` na criação.
-
-## 7. Endpoints
-
-### Criar
-
-```http
-POST /tasks
-Content-Type: application/json
-
-{"description":"Ler Peewee","priority":2}
-```
-
-A rota valida o corpo, constrói uma tarefa, chama `TaskService.create` e retorna `201`.
-
-### Atualizar
-
-```http
-PUT /tasks/1
-Content-Type: application/json
-
-{"description":"Ler Flask e Peewee","priority":1}
-```
-
-A rota valida o corpo e o identificador. O serviço procura a tarefa. Se não existir, retorna `404`; caso exista, atualiza seus campos.
-
-### Operações ainda não implementadas
-
-A origem não possuía:
-
-- `GET /tasks`;
-- `GET /tasks/{id}`;
-- `DELETE /tasks/{id}`.
-
-Elas continuam retornando `405 Method Not Allowed` para preservar o contrato original.
-
-## 8. Testes
-
-Os testes usam `create_app` com um SQLite temporário:
-
-```python
-@pytest.fixture
-def app(tmp_path):
-    return create_app({
-        "TESTING": True,
-        "DATABASE_URL": f"sqlite:///{tmp_path / 'test.db'}",
-    })
-```
-
-O teste de criação confirma status `201`, cabeçalho `Location`, JSON e persistência real:
-
-```python
-task = Task.get_by_id(1)
-assert task.description == "created"
-```
-
-O cliente de testes do Flask envia requisições sem abrir uma porta TCP. Assim, a suíte verifica o comportamento HTTP com rapidez e isolamento.
-
-Execute:
+Execute tudo com:
 
 ```bash
 pytest
 ```
 
-## 9. Comparação com Spring, SQLAlchemy e Peewee
+## 10. Relação com Clean e Layered Architecture
 
-| Conceito | Spring/Java | SQLAlchemy | Peewee |
-|---|---|---|---|
-| Rota HTTP | `@PostMapping` | Função Flask | Função Flask |
-| Entidade | `@Entity` | Classe declarativa | Classe `Model` |
-| Banco | H2 | `Engine` | `SqliteDatabase` |
-| Sessão | `JpaRepository`/contexto JPA | `Session` | Conexão e `atomic()` |
-| Consulta | `findById` | `select(...).where(...)` | `get_or_none(...)` |
-| Inserção | `save` | `session.add` + `commit` | `model.save` |
-| Atualização | `save` | alterar objeto + `commit` | alterar objeto + `save` |
-| Transação | Gerenciada pelo framework | `Session` | `database.atomic()` |
+A Clean Architecture forneceu a separação entre domínio, casos de uso, boundaries e infraestrutura. A Layered Architecture forneceu a referência para dividir controller, serviço, repository, modelo e testes.
 
-Peewee é mais enxuto e explícito. Ele oferece menos abstrações automáticas que Spring Data, mas permite ver diretamente onde a conexão é aberta, onde a transação começa e onde o modelo é salvo.
+A arquitetura hexagonal acrescenta uma distinção explícita entre direção das portas:
 
-## 10. Limitações e próximos passos
+| Referência | Tradução hexagonal |
+|---|---|
+| Boundary de entrada | `TaskUseCasePort`, driving port |
+| Boundary de persistência | `TaskRepositoryPort`, driven port |
+| Serviço de aplicação | `TaskService`, núcleo de casos de uso |
+| Controller Flask | Adaptador inbound |
+| Repository Peewee | Adaptador outbound |
+| Composition root | `create_app` |
 
-SQLite atende bem ao POC e ao desenvolvimento local. Para muitas escritas concorrentes ou alta disponibilidade, avalie PostgreSQL. Nesta branch, `_sqlite_path` aceita somente URLs SQLite de propósito.
+O resultado evita que a estrutura de camadas seja confundida com a direção das dependências. Mais de um adaptador pode usar a mesma porta de entrada, e mais de uma tecnologia pode implementar a mesma porta de saída.
 
-O servidor iniciado por `python run.py` é adequado para desenvolvimento. Em produção, use um servidor WSGI e configure logs, variáveis de ambiente, backup e migrações.
+## 11. Evolução
 
-Próximos exercícios recomendados:
+Para adicionar uma CLI, crie um adaptador inbound que receba `TaskUseCasePort`. Para trocar SQLite, crie um adaptador outbound que implemente `TaskRepositoryPort` e altere somente `create_app`. Para publicar eventos, adicione outra porta de saída e outro adaptador, mantendo o serviço livre da biblioteca do broker.
 
-1. Implementar `GET /tasks/{id}` usando `Task.get_or_none`.
-2. Implementar `GET /tasks` usando `Task.select()`.
-3. Implementar `DELETE /tasks/{id}` dentro de `database.atomic()`.
-4. Adicionar uma tabela relacionada e testar `foreign_keys`.
-5. Adicionar migrações com Peewee Migrate.
-6. Adicionar índices para consultas frequentes.
-
-## Referências
-
-[1]: https://flask.palletsprojects.com/en/stable/ "Flask Documentation"
-[2]: https://flask.palletsprojects.com/en/stable/patterns/appfactories/ "Flask Application Factories"
-[3]: https://docs.peewee-orm.com/en/latest/peewee/quickstart.html "Peewee Quickstart"
-[4]: https://docs.peewee-orm.com/en/latest/peewee/database.html "Peewee Database Documentation"
-[5]: https://docs.peewee-orm.com/en/latest/peewee/transactions.html "Peewee Transactions"
-[6]: https://www.sqlite.org/docs.html "SQLite Documentation"
-[7]: https://docs.pytest.org/en/stable/ "pytest Documentation"
+O POC não inclui autenticação, OpenAPI, migrações versionadas, `GET` ou `DELETE`. Esses recursos podem ser adicionados como novos adaptadores ou casos de uso sem colocar dependências externas dentro do domínio.
