@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.application.ports import TaskRepository
-from app.domain.entities import Task
+from app.usecases.domain.entities import Task
+from app.usecases.ports.ports import TaskRepository
 
 
 class TaskNotFoundError(LookupError):

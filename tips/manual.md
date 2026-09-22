@@ -10,12 +10,12 @@ Este manual explica o código do projeto Flask que replica o POC `just_to_code`,
 |---|---|
 | `run.py` | Inicia o servidor Flask. |
 | `app/__init__.py` | Composition root: cria Flask, SQLite, repositório, serviço e Blueprint. |
-| `app/domain/entities.py` | Entidade `Task` e regras de validação, sem dependências externas. |
-| `app/application/ports.py` | Contrato `TaskRepository` usado pela aplicação. |
-| `app/application/services.py` | Casos de uso de criação e atualização. |
+| `../app/usecases/domain` | Entidade `Task` e regras de validação, sem dependências externas. |
+| `../app/usecases/services` | Contrato `TaskRepository` usado pela aplicação. |
+| `../app/usecases/services` | Casos de uso de criação e atualização. |
 | `app/infrastructure/persistence/models.py` | Modelo Peewee ligado à tabela SQLite. |
 | `app/infrastructure/persistence/repositories.py` | Adapta Peewee ao contrato do repositório. |
-| `app/interfaces/http/routes.py` | Traduz HTTP/JSON para chamadas do serviço. |
+| `../app/application` | Traduz HTTP/JSON para chamadas do serviço. |
 | `tests/test_tasks.py` | Testa a API usando o cliente de testes do Flask. |
 
 O fluxo de uma criação é:
@@ -51,7 +51,7 @@ A aplicação fica disponível em `http://localhost:8080`. Para criar uma tarefa
 
 ```bash
 curl -i -X POST http://localhost:8080/tasks \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: services/json' \
   -d '{"description":"Estudar Peewee","priority":1}'
 ```
 

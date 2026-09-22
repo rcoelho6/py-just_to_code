@@ -1,7 +1,7 @@
 import pytest
 
 from app import create_app
-from app.domain.entities import Task
+from app.usecases.domain.entities import Task
 from app.infrastructure.persistence.models import PeeweeTask
 
 

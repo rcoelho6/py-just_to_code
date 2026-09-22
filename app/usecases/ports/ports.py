@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domain.entities import Task
+from app.usecases.domain.entities import Task
 
 
 class TaskRepository(Protocol):
@@ -14,3 +14,4 @@ class TaskRepository(Protocol):
 
     def update(self, task: Task) -> None:
         ...
+

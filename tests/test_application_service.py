@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.application.services import TaskNotFoundError, TaskService
-from app.domain.entities import Task
+from app.usecases.services.services import TaskNotFoundError, TaskService
+from app.usecases.domain.entities import Task
 
 
 @dataclass

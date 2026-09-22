@@ -5,10 +5,10 @@ import os
 from flask import Flask
 from peewee import SqliteDatabase
 
-from app.application.services import TaskService
+from app.application.http.routes import create_tasks_blueprint
 from app.infrastructure.persistence.models import PeeweeTask
 from app.infrastructure.persistence.repositories import PeeweeTaskRepository
-from app.interfaces.http.routes import create_tasks_blueprint
+from app.usecases.services.services import TaskService
 
 
 def _sqlite_path(database_url: str) -> str:
