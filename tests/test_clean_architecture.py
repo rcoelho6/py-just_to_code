@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.clean_architecture.domain.task import Task, TaskValidationError
+from app.clean_architecture.usecases.ports import TaskIncomeBoundary
 from app.clean_architecture.usecases.task_service import TaskNotFoundError, TaskService
 
 
@@ -41,6 +42,12 @@ def test_use_case_uses_input_and_output_boundaries():
 
     assert created == Task(id=1, description="created", priority=1)
     assert datasource.tasks[1] == created
+
+
+def test_service_implements_the_input_boundary():
+    service = TaskService(InMemoryDatasource({}))
+
+    assert isinstance(service, TaskIncomeBoundary)
 
 
 def test_use_case_does_not_update_when_values_are_equal():

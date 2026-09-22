@@ -14,7 +14,7 @@ A implementação segue a direção de dependências da Clean Architecture:
 | Frameworks | `app/clean_architecture/frameworks` | Peewee, SQLite e modelo persistente. |
 | Composição | `app/__init__.py` | Conecta as implementações concretas. |
 
-O domínio não conhece detalhes externos. O caso de uso depende de `TaskDatasourceBoundary`, definido como `Protocol`. O datasource Peewee implementa essa boundary. O controller recebe `TaskIncomeBoundary` por injeção, em vez de criar diretamente o serviço ou o banco.
+O domínio não conhece detalhes externos. As portas `TaskIncomeBoundary` e `TaskDatasourceBoundary` ficam centralizadas em `app/clean_architecture/usecases/ports.py`. O `TaskService` implementa a porta de entrada e o datasource Peewee implementa a porta de saída. `TaskIncomeBoundary` é `runtime_checkable`, permitindo validar o contrato em testes. O controller recebe a porta por injeção, em vez de criar diretamente o serviço ou o banco.
 
 ## Contrato preservado
 

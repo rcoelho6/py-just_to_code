@@ -56,9 +56,9 @@ O arquivo `usecases/ports.py` define duas boundaries usando `typing.Protocol`.
 
 `TaskIncomeBoundary` é a porta de entrada. Ela descreve o que um adaptador externo pode pedir à aplicação: criar e atualizar uma tarefa.
 
-`TaskDatasourceBoundary` é a porta de saída. Ela descreve o que a aplicação precisa do armazenamento: criar, procurar e atualizar uma tarefa.
+`TaskDatasourceBoundary` é a porta de saída. Ela descreve o que a aplicação precisa do armazenamento: criar, procurar e atualizar uma tarefa. As duas portas ficam juntas em `usecases/ports.py`, acompanhando a organização adotada na branch `feature/layered-architecture`.
 
-Um `Protocol` é uma forma de tipagem estrutural. Uma classe não precisa herdar explicitamente de `TaskDatasourceBoundary`; basta oferecer os métodos compatíveis. Isso é útil em Python porque permite usar o datasource real em produção e um fake em testes.
+Um `Protocol` é uma forma de tipagem estrutural. Uma classe não precisa herdar explicitamente de `TaskDatasourceBoundary`; basta oferecer os métodos compatíveis. `TaskIncomeBoundary` usa também `runtime_checkable`, então os testes podem confirmar com `isinstance` que `TaskService` oferece a porta de entrada. Isso é útil em Python porque permite usar o datasource real em produção e um fake em testes.
 
 `TaskService` implementa os casos de uso. Ao atualizar, ele primeiro procura a entidade pela porta de saída. Se não encontrar, levanta `TaskNotFoundError`. Se os valores já forem iguais, não chama a operação de atualização. Caso contrário, delega a mudança ao datasource.
 

@@ -8,4 +8,4 @@ A implementação segue a direção de dependências da Clean Architecture:
 - `frameworks`: detalhes externos. O `TaskModel` e `PeeweeTaskDatasource` implementam a persistência SQLite.
 - `app/__init__.py`: composition root. É o único lugar que conhece todas as implementações e faz a composição.
 
-O fluxo de dependência aponta para dentro. O caso de uso depende de `TaskDatasourceBoundary`, um `Protocol`, e não da classe Peewee. Isso permite testar o caso de uso com um fake em memória e trocar SQLite por outro armazenamento sem alterar o domínio.
+O fluxo de dependência aponta para dentro. O controller depende de `TaskIncomeBoundary`, um `Protocol` de entrada, e o caso de uso depende de `TaskDatasourceBoundary`, um `Protocol` de saída. Ambos ficam em `usecases/ports.py`; o `TaskService` implementa a porta de entrada e o datasource Peewee implementa a porta de saída. `TaskIncomeBoundary` é `runtime_checkable`, permitindo verificar em testes que o serviço está conectado ao contrato correto. Isso permite testar o caso de uso com um fake em memória e trocar SQLite por outro armazenamento sem alterar o domínio.
