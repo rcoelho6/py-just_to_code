@@ -1,30 +1,23 @@
 from __future__ import annotations
 
-from sqlalchemy import Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
-
-from . import Base
-
+from peewee import AutoField, IntegerField, Model, TextField
 
 class ValidationError(ValueError):
     """Raised when a task does not satisfy the API domain rules."""
 
 
-class Task(Base):
-    __tablename__ = "task"
+class BaseModel(Model):
+    class Meta:
+        database = None
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    description: Mapped[str] = mapped_column(String, nullable=False)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    def __init__(self, description: str, priority: int, id: int | None = None, *, updating: bool = False):
-        if updating and (id is None or id <= 0):
-            raise ValidationError("Id cannot be null or less than or equals 0")
-        validate_task(description, priority)
-        if id is not None:
-            self.id = id
-        self.description = description
-        self.priority = priority
+class Task(BaseModel):
+    id = AutoField()
+    description = TextField(null=False)
+    priority = IntegerField(null=False)
+
+    class Meta:
+        table_name = "task"
 
 
 def validate_task(description: str | None, priority: int | None) -> None:
@@ -32,6 +25,13 @@ def validate_task(description: str | None, priority: int | None) -> None:
         raise ValidationError("Description cannot be null or blank")
     if priority is None or isinstance(priority, bool) or not isinstance(priority, int) or priority < 0:
         raise ValidationError("Priority cannot be null or negative")
+
+
+def build_task(description: str | None, priority: int | None, *, task_id: int | None = None, updating: bool = False) -> Task:
+    if updating and (task_id is None or task_id <= 0):
+        raise ValidationError("Id cannot be null or less than or equals 0")
+    validate_task(description, priority)
+    return Task(id=task_id, description=description, priority=priority)
 
 
 def task_dto(task: Task) -> dict:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from peewee import Database
 
 from .models import Task
 
@@ -11,21 +10,21 @@ class TaskNotFoundError(LookupError):
 
 
 class TaskService:
-    def __init__(self, session: Session):
-        self.session = session
+    def __init__(self, database: Database):
+        self.database = database
 
     def create(self, task: Task) -> Task:
-        self.session.add(task)
-        self.session.commit()
-        self.session.refresh(task)
+        with self.database.atomic():
+            task.save(force_insert=True)
         return task
 
     def update(self, task: Task) -> None:
-        existing = self.session.scalar(select(Task).where(Task.id == task.id))
-        if existing is None:
-            raise TaskNotFoundError("ID not found")
-        if existing.description == task.description and existing.priority == task.priority:
-            return
-        existing.description = task.description
-        existing.priority = task.priority
-        self.session.commit()
+        with self.database.atomic():
+            existing = Task.get_or_none(Task.id == task.id)
+            if existing is None:
+                raise TaskNotFoundError("ID not found")
+            if existing.description == task.description and existing.priority == task.priority:
+                return
+            existing.description = task.description
+            existing.priority = task.priority
+            existing.save(only=[Task.description, Task.priority])
