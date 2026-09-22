@@ -3,23 +3,11 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "py-just-to-code"
+name = "py-just-to-code-no-framework"
 version = "0.1.0"
-description = "Flask port of the just_to_code REST API"
+description = "Standard-library implementation of the just_to_code REST API"
 requires-python = ">=3.11"
-dependencies = [
-  "Flask>=3.1,<4",
-  "peewee>=3.17,<4",
-]
-
-[project.optional-dependencies]
-test = [
-  "pytest>=8,<9",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
+dependencies = []
 
 [tool.setuptools.packages.find]
 include = ["app*"]

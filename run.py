@@ -1,7 +1,14 @@
-from app import create_app
+from __future__ import annotations
 
-app = create_app()
+from app import build_server
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    server = build_server()
+    print(f"Serving on http://{server.server_address[0]}:{server.server_address[1]}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()

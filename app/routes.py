@@ -1,68 +1,99 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+import json
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
-from . import get_database
-from .models import ValidationError, build_task, task_dto
+from .models import Task, TaskValidationError
 from .services import TaskNotFoundError, TaskService
 
-tasks_bp = Blueprint("tasks", __name__, url_prefix="/tasks")
+
+class TaskRequestHandler(BaseHTTPRequestHandler):
+    server_version = "JustToCode/NoFramework"
+
+    def do_POST(self) -> None:
+        if self.path not in ("/tasks", "/tasks/"):
+            self._method_not_allowed() if self.path.startswith("/tasks/") else self._error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        try:
+            task = self.server.task_service.create(self._task_from_body())
+            self._json(HTTPStatus.CREATED, self._task_payload(task), {"Location": f"/tasks/{task.id}"})
+        except (TaskValidationError, ValueError) as exc:
+            self._error(HTTPStatus.BAD_REQUEST, f"Erro with status 400: {exc}")
+        except Exception as exc:
+            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unexpected error {exc}")
+
+    def do_PUT(self) -> None:
+        if not self.path.startswith("/tasks/"):
+            self._error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        try:
+            task_id = int(self.path.removeprefix("/tasks/"))
+            if task_id <= 0:
+                raise ValueError("Invalid task id")
+            task = self._task_from_body(task_id=task_id)
+            self.server.task_service.update(task)
+            self._json(HTTPStatus.OK, self._task_payload(task))
+        except (TaskValidationError, ValueError) as exc:
+            self._error(HTTPStatus.BAD_REQUEST, f"Erro with status 400: {exc}")
+        except TaskNotFoundError as exc:
+            self._error(HTTPStatus.NOT_FOUND, f"Erro with status 404: {exc}")
+        except Exception as exc:
+            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unexpected error {exc}")
+
+    def do_GET(self) -> None:
+        self._method_not_allowed()
+
+    def do_DELETE(self) -> None:
+        self._method_not_allowed()
+
+    def do_PATCH(self) -> None:
+        self._method_not_allowed()
+
+    def _task_from_body(self, task_id: int | None = None) -> Task:
+        body = self._read_json()
+        return Task(id=task_id, description=body.get("description"), priority=body.get("priority"))
+
+    def _read_json(self) -> dict[str, Any]:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length))
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("Request must contain a valid JSON object") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Request must contain a valid JSON object")
+        return payload
+
+    def _method_not_allowed(self) -> None:
+        self._error(HTTPStatus.METHOD_NOT_ALLOWED, "Method not allowed")
+
+    def _json(self, status: HTTPStatus, payload: dict[str, Any], headers: dict[str, str] | None = None) -> None:
+        encoded = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _error(self, status: HTTPStatus, message: str) -> None:
+        self._json(status, {"message": message, "status": status.value})
+
+    @staticmethod
+    def _task_payload(task: Task) -> dict[str, Any]:
+        return {"description": task.description, "priority": task.priority}
+
+    def log_message(self, format: str, *args: Any) -> None:
+        return
 
 
-def error_response(message: str, status: int):
-    return jsonify({"message": message, "status": status}), status
+class TaskHTTPServer(ThreadingHTTPServer):
+    task_service: TaskService
 
 
-def read_payload() -> tuple[dict | None, tuple | None]:
-    if not request.is_json:
-        return None, error_response("Erro with status 400: Request must be JSON", 400)
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return None, error_response("Erro with status 400: Invalid JSON body", 400)
-    return payload, None
-
-
-@tasks_bp.route("", methods=["POST"])
-@tasks_bp.route("/", methods=["POST"])
-def create():
-    payload, error = read_payload()
-    if error:
-        return error
-    try:
-        task = build_task(description=payload.get("description"), priority=payload.get("priority"))
-        TaskService(get_database()).create(task)
-        response = jsonify(task_dto(task))
-        response.status_code = 201
-        response.headers["Location"] = f"/tasks/{task.id}"
-        return response
-    except ValidationError as exc:
-        return error_response(f"Erro with status 400: {exc}", 400)
-    except Exception as exc:
-        return error_response(f"Unexpected error {exc}", 500)
-
-
-@tasks_bp.route("/<int:task_id>", methods=["PUT"])
-def update(task_id: int):
-    payload, error = read_payload()
-    if error:
-        return error
-    try:
-        task = build_task(description=payload.get("description"), priority=payload.get("priority"), task_id=task_id, updating=True)
-        TaskService(get_database()).update(task)
-        return jsonify(task_dto(task)), 200
-    except ValidationError as exc:
-        return error_response(f"Erro with status 400: {exc}", 400)
-    except TaskNotFoundError as exc:
-        return error_response(f"Erro with status 404: {exc}", 404)
-    except Exception as exc:
-        return error_response(f"Unexpected error {exc}", 500)
-
-
-@tasks_bp.errorhandler(405)
-def method_not_allowed(_error):
-    return error_response("Method not allowed", 405)
-
-
-@tasks_bp.errorhandler(404)
-def not_found(_error):
-    return error_response("Not found", 404)
+def create_server(host: str, port: int, task_service: TaskService) -> TaskHTTPServer:
+    server = TaskHTTPServer((host, port), TaskRequestHandler)
+    server.task_service = task_service
+    return server
