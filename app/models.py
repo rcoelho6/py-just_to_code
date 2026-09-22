@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from peewee import AutoField, IntegerField, Model, TextField
 
-from . import Base
-
-
 class ValidationError(ValueError):
     """Raised when a task does not satisfy the API domain rules."""
 
