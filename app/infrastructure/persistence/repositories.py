@@ -3,7 +3,7 @@ from __future__ import annotations
 from peewee import Database
 
 from app.infrastructure.persistence.models import PeeweeTask
-from app.usecases.domains import Task
+from app.usecases.domain.entities import Task
 
 
 class PeeweeTaskRepository:

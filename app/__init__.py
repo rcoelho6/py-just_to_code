@@ -8,7 +8,7 @@ from peewee import SqliteDatabase
 from app.application.http.routes import create_tasks_blueprint
 from app.infrastructure.persistence.models import PeeweeTask
 from app.infrastructure.persistence.repositories import PeeweeTaskRepository
-from app.usecases.services import TaskService
+from app.usecases.services.services import TaskService
 
 
 def _sqlite_path(database_url: str) -> str:
