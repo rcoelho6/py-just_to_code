@@ -1,7 +1,9 @@
-from app import create_app
+from __future__ import annotations
 
-app = create_app()
+import uvicorn
+
+from app import app
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080)

@@ -1,27 +1,27 @@
-# py-just_to_code
+# py-just_to_code — `feature/fastapi`
 
-Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado na branch `main`.
+Port em Python/FastAPI do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado **exclusivamente na branch `main`**. A implementação substitui Flask pelo framework FastAPI e mantém Peewee + SQLite para persistência.
 
-## Escopo preservado
+## Estrutura
 
-A branch de origem é um POC de API REST com o módulo de tarefas. O contrato disponível foi mantido:
+| Arquivo | Responsabilidade |
+|---|---|
+| `app/__init__.py` | Application factory `create_app` e composição do banco/serviço. |
+| `app/models.py` | Modelo Peewee, validações e DTO de saída. |
+| `app/services.py` | Serviço de criação e atualização. |
+| `app/routes.py` | Router FastAPI, parsing JSON e respostas HTTP. |
+| `run.py` | Inicialização com Uvicorn. |
+
+## Contrato preservado
 
 | Método | Endpoint | Resultado |
 |---|---|---|
-| `POST` | `/tasks` ou `/tasks/` | Cria uma tarefa, responde `201` e envia `Location: /tasks/{id}` |
-| `PUT` | `/tasks/{id}` | Atualiza uma tarefa, responde `200` |
-| `GET` | `/tasks` e `/tasks/{id}` | Ainda não implementado na origem (`405`) |
-| `DELETE` | `/tasks/{id}` | Ainda não implementado na origem (`405`) |
+| `POST` | `/tasks` ou `/tasks/` | Cria uma tarefa, responde `201` e envia `Location: /tasks/{id}`. |
+| `PUT` | `/tasks/{id}` | Atualiza uma tarefa, responde `200`. |
+| `GET` | `/tasks` e `/tasks/{id}` | Não implementado na origem (`405`). |
+| `DELETE` | `/tasks/{id}` | Não implementado na origem (`405`). |
 
-O corpo de entrada e saída usa somente `description` e `priority`. `description` não pode ser nula/branca e `priority` deve ser um inteiro não negativo. Erros retornam `{"message": "...", "status": <http status>}`.
-
-## Alternativas Flask
-
-- **Spring Boot MVC** foi substituído por **Flask Blueprints**, mantendo as rotas REST e os códigos HTTP.
-- **Spring Data JPA/H2** foi substituído nesta branch por **Peewee + SQLite**. Peewee é uma alternativa ORM leve e explícita para o POC; a branch aceita URLs SQLite e mantém as transações com `database.atomic()`.
-- **Injeção de dependências Spring** foi reduzida a uma fábrica de aplicação Flask e uma `TaskService` explícita, o que mantém as camadas controller/service/model sem adicionar um container de DI para este POC.
-- A **H2 Console** não possui equivalente nativo no Flask. Para inspeção local, use uma ferramenta SQLite ou conecte o arquivo `tasks.db`; não foi adicionada uma rota administrativa para não ampliar a superfície da API.
-- Swagger/OpenAPI não existia na origem; portanto não foi inventado no port.
+`description` não pode ser nula ou vazia, e `priority` deve ser um inteiro não negativo. Erros usam `{"message": "...", "status": <status HTTP>}`.
 
 ## Executar
 
@@ -32,13 +32,12 @@ pip install -e '.[test]'
 python run.py
 ```
 
-A API fica disponível em `http://localhost:8080`.
+A aplicação fica disponível em `http://localhost:8080`. O FastAPI também disponibiliza documentação interativa em `/docs` e `/redoc`.
 
-Para usar outro banco:
+Para usar outro banco SQLite:
 
 ```bash
-DATABASE_URL='sqlite:///tasks.db' python run.py
-# Exemplo para PostgreSQL: DATABASE_URL='postgresql+psycopg://user:password@host/db' python run.py
+DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
 ```
 
 ## Testar
@@ -47,10 +46,8 @@ DATABASE_URL='sqlite:///tasks.db' python run.py
 pytest
 ```
 
-## Manual de estudo
+Os testes utilizam `fastapi.testclient.TestClient` e SQLite temporário.
 
-O manual [tips/manual.md](tips/manual.md) explica toda a implementação, o fluxo de uma requisição Flask, Blueprints, conexões Peewee, transações SQLite, testes e as diferenças em relação ao projeto Java original.
+## Alternativa ao Spring
 
-## Licença
-
-O projeto de origem declara licença MIT. Este port preserva a mesma intenção; consulte o repositório de origem para o texto legal completo.
+Spring MVC foi substituído por FastAPI, e o servidor embutido é executado por Uvicorn. Spring Data JPA/H2 foi substituído por Peewee/SQLite, seguindo a base disponível na branch `main`. A composição explícita em `create_app` substitui a configuração automática do Spring.

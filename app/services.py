@@ -6,7 +6,7 @@ from .models import Task
 
 
 class TaskNotFoundError(LookupError):
-    pass
+    """Raised when an update targets a task that does not exist."""
 
 
 class TaskService:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from peewee import AutoField, IntegerField, Model, TextField
 
+
 class ValidationError(ValueError):
     """Raised when a task does not satisfy the API domain rules."""
 
@@ -34,5 +35,5 @@ def build_task(description: str | None, priority: int | None, *, task_id: int | 
     return Task(id=task_id, description=description, priority=priority)
 
 
-def task_dto(task: Task) -> dict:
+def task_dto(task: Task) -> dict[str, str | int]:
     return {"description": task.description, "priority": task.priority}
