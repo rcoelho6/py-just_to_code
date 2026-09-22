@@ -1,31 +1,30 @@
 # py-just_to_code
 
-Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado na branch Java `feat/clean-arch` nesta branch `feature/clean-architecture`.
+Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado na branch Java `feat/clean-arch`. Esta branch, `feature/clean-architecture`, organiza o POC usando Clean Architecture, Peewee e SQLite.
 
-## Clean Architecture
-
-A implementação segue a direção de dependências da Clean Architecture:
+## Estrutura atual
 
 | Camada | Localização | Responsabilidade |
 |---|---|---|
-| Domínio | `app/clean_architecture/domain` | Entidade `Task` e invariantes, sem frameworks. |
-| Casos de uso | `app/clean_architecture/usecases` | Boundaries e `TaskService`, sem Flask ou Peewee. |
-| Adaptadores | `app/clean_architecture/applications` | Controller HTTP e presenters JSON. |
-| Frameworks | `app/clean_architecture/infrastructures` | Peewee, SQLite e modelo persistente. |
-| Composição | `app/__init__.py` | Conecta as implementações concretas. |
+| Domínio e regras | `app/clean_architecture/usecases/domains.py` | Entidade imutável `Task` e invariantes de negócio. |
+| Portas | `app/clean_architecture/usecases/ports.py` | `TaskIncomeBoundary` e `TaskDatasourceBoundary`, definidos com `Protocol`. |
+| Casos de uso | `app/clean_architecture/usecases/service.py` | `TaskService` e `TaskNotFoundError`. |
+| Applications | `app/clean_architecture/applications` | Controller Flask e DTOs de entrada/saída. |
+| Infrastructures | `app/clean_architecture/infrastructures` | Modelo Peewee e datasource SQLite. |
+| Composição | `app/__init__.py` | Cria o banco, conecta as implementações e registra o Blueprint. |
 
-O domínio não conhece detalhes externos. As portas `TaskIncomeBoundary` e `TaskDatasourceBoundary` ficam centralizadas em `app/clean_architecture/usecases/ports.py`. O `TaskService` implementa a porta de entrada e o datasource Peewee implementa a porta de saída. `TaskIncomeBoundary` é `runtime_checkable`, permitindo validar o contrato em testes. O controller recebe a porta por injeção, em vez de criar diretamente o serviço ou o banco.
+As dependências apontam para dentro. O controller depende de `TaskIncomeBoundary`, não de `TaskService`. O serviço depende de `TaskDatasourceBoundary`, não de Peewee. O domínio não importa Flask, Peewee ou SQLite.
 
-## Contrato preservado
+## Contrato HTTP
 
 | Método | Endpoint | Resultado |
 |---|---|---|
-| `POST` | `/tasks` ou `/tasks/` | Cria uma tarefa, responde `201` e envia `Location: /tasks/{id}` |
-| `PUT` | `/tasks/{id}` | Atualiza uma tarefa, responde `200` |
-| `GET` | `/tasks` e `/tasks/{id}` | Ainda não implementado na origem (`405`) |
-| `DELETE` | `/tasks/{id}` | Ainda não implementado na origem (`405`) |
+| `POST` | `/tasks` ou `/tasks/` | Cria uma tarefa, responde `201` e envia `Location: /tasks/{id}`. |
+| `PUT` | `/tasks/{id}` | Atualiza uma tarefa, responde `200`. |
+| `GET` | `/tasks` e `/tasks/{id}` | Não implementado na origem (`405`). |
+| `DELETE` | `/tasks/{id}` | Não implementado na origem (`405`). |
 
-`description` não pode ser nula ou vazia, e `priority` deve ser um inteiro não negativo. Erros usam o formato `{"message": "...", "status": <http status>}`.
+O corpo usa `description` e `priority`. A descrição não pode ser nula ou vazia, e a prioridade deve ser um inteiro não negativo. Erros usam `{"message": "...", "status": <status HTTP>}`.
 
 ## Executar
 
@@ -36,7 +35,7 @@ pip install -e '.[test]'
 python run.py
 ```
 
-A API fica disponível em `http://localhost:8080`. O banco padrão é o arquivo SQLite `tasks.db`. Para executar com outro arquivo:
+A API fica disponível em `http://localhost:8080`. O banco padrão é `tasks.db`. Para indicar outro arquivo SQLite:
 
 ```bash
 DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
@@ -48,16 +47,16 @@ DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
 pytest
 ```
 
-A suíte contém testes de integração HTTP e testes unitários do caso de uso com um datasource em memória. Dessa forma, a regra da aplicação é testada sem Flask, Peewee ou SQLite.
+A suíte combina testes de integração HTTP com SQLite temporário e testes unitários do `TaskService` usando um datasource em memória. Também verifica que `TaskService` implementa a porta `TaskIncomeBoundary`.
 
 ## Documentação
 
-O manual [tips/manual.md](tips/manual.md) explica a Clean Architecture, o fluxo de dependências, Flask, Peewee, SQLite, boundaries, adaptadores e testes. A estrutura também está resumida em [app/clean_architecture/README.md](app/clean_architecture/README.md).
+O manual detalhado está em [tips/manual.md](tips/manual.md). A visão resumida da arquitetura está em [app/clean_architecture/README.md](app/clean_architecture/README.md).
 
-## Alternativas ao Java
+## Equivalência com a branch Java
 
-Spring MVC foi substituído por Flask. `TaskIncomeBoundary` e `TaskDatasourceBoundary` substituem as interfaces de entrada e saída da aplicação Java. `TaskModel` e `PeeweeTaskDatasource` substituem a entidade JPA e o datasource adaptador. A composição explícita no `create_app` substitui a configuração automática do container Spring.
+`Task` corresponde ao domínio Java; `TaskIncomeBoundary` e `TaskDatasourceBoundary` correspondem às boundaries de entrada e saída; `TaskService` corresponde ao serviço de caso de uso; `TaskDto` corresponde ao presenter de entrada; `TaskModel` e `PeeweeTaskDatasource` correspondem ao adaptador de persistência. Flask substitui Spring MVC, e a composição explícita em `create_app` substitui a descoberta de dependências do container Spring.
 
-## Licença
+## Limites do POC
 
-O projeto de origem declara licença MIT. Este port preserva a mesma intenção; consulte o repositório de origem para o texto legal completo.
+A aplicação preserva o escopo original e não adiciona autenticação, OpenAPI, listagem ou exclusão de tarefas. `create_tables` é suficiente para o POC, mas uma aplicação maior deve usar migrações versionadas. SQLite pode ser substituído por outro banco implementando a mesma `TaskDatasourceBoundary`.

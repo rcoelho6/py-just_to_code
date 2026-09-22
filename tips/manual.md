@@ -1,40 +1,42 @@
 # Manual de estudo: Clean Architecture com Flask, Peewee e SQLite
 
-Este manual explica a branch `feature/clean-architecture` do projeto `py-just_to_code`. Ela foi baseada na branch Java `feat/clean-arch` do projeto `just_to_code` e mantém o mesmo contrato HTTP, mas usa convenções Python, `Protocol`, dataclasses, injeção explícita e adaptadores independentes.
+Este manual descreve a versão atual da branch `feature/clean-architecture`. Ela foi baseada na branch Java `feat/clean-arch`, mas usa dataclasses, `Protocol`, composição explícita e adaptadores idiomáticos de Python. A organização atual usa os diretórios `usecases`, `applications` e `infrastructures`.
 
-## 1. Ideia central
+## 1. Visão geral
 
-Clean Architecture organiza o código em círculos. As regras mais importantes ficam no centro e não conhecem detalhes externos. Flask, Peewee, SQLite e JSON ficam nas bordas.
+Clean Architecture separa as regras centrais dos detalhes externos. A entidade e os casos de uso não precisam saber se a entrega acontece por Flask ou se a persistência acontece em SQLite. Esses detalhes ficam nas bordas e são conectados em `app/__init__.py`.
 
-> **Regra de dependência:** dependências de código apontam para dentro. O domínio não importa o banco. O caso de uso não importa Flask. A infraestrutura implementa uma interface definida por uma camada interna.
-
-Nesta implementação, os círculos são:
-
-| Círculo | Pacote | Conteúdo |
+| Camada | Arquivo ou diretório | Função |
 |---|---|---|
-| Domínio | `app/clean_architecture/domain` | Entidade `Task` e validações invariantes. |
-| Casos de uso | `app/clean_architecture/usecases` | Boundaries e `TaskService`. |
-| Adaptadores | `../app/clean_architecture/applications` | Controller Flask e presenters. |
-| Frameworks | `../app/clean_architecture/infrastructures` | Modelo Peewee, SQLite e datasource. |
-| Composição | `app/__init__.py` | Montagem das dependências concretas. |
+| Domínio | `app/clean_architecture/usecases/domains.py` | Entidade `Task` e invariantes. |
+| Portas | `app/clean_architecture/usecases/ports.py` | Contratos de entrada e saída. |
+| Caso de uso | `app/clean_architecture/usecases/service.py` | Criação e atualização de tarefas. |
+| Applications | `app/clean_architecture/applications/controllers.py` | Rotas Flask e tradução HTTP. |
+| DTOs | `app/clean_architecture/applications/dtos.py` | Tradução entre JSON e domínio. |
+| Infrastructures | `app/clean_architecture/infrastructures/peewee_models.py` | Modelo persistente. |
+| Datasource | `app/clean_architecture/infrastructures/peewee_datasource.py` | Implementação Peewee da persistência. |
+| Composição | `app/__init__.py` | Montagem das dependências. |
 
-O caminho de uma requisição é:
+O fluxo de uma criação é:
 
 ```text
-HTTP/JSON
-  -> adapters/controllers.py
-  -> TaskDto
-  -> domain.Task
-  -> usecases.TaskService
-  -> usecases.TaskDatasourceBoundary
-  -> frameworks.PeeweeTaskDatasource
-  -> frameworks.TaskModel
+Cliente HTTP
+  -> applications/controllers.py
+  -> applications/dtos.py
+  -> usecases/domains.py: Task
+  -> usecases/ports.py: TaskIncomeBoundary
+  -> usecases/service.py: TaskService
+  -> usecases/ports.py: TaskDatasourceBoundary
+  -> infrastructures/peewee_datasource.py
+  -> infrastructures/peewee_models.py
   -> SQLite
 ```
 
-## 2. Domínio
+A regra de dependência aponta para dentro. O controller não importa `TaskService`; ele recebe a porta `TaskIncomeBoundary`. O serviço não importa Peewee; ele recebe `TaskDatasourceBoundary`. O domínio não importa Flask nem banco.
 
-O domínio está em `../app/clean_architecture/usecases/domains.py`. A entidade é uma dataclass imutável:
+## 2. Domínio em `usecases/domains.py`
+
+A entidade `Task` é uma dataclass imutável:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -44,23 +46,47 @@ class Task:
     id: int | None = None
 ```
 
-`frozen=True` impede que uma entidade seja alterada silenciosamente depois de criada. Para representar uma nova versão, o código cria outro objeto. `slots=True` evita um dicionário de atributos por instância e comunica que a entidade possui apenas os campos declarados.
+`frozen=True` impede alterações acidentais depois da criação. `slots=True` restringe os atributos aos campos declarados. O método `__post_init__` protege as invariantes: o identificador, quando presente, deve ser positivo; a descrição deve conter texto; e a prioridade deve ser um inteiro não negativo.
 
-O método `__post_init__` valida invariantes. Uma descrição vazia e uma prioridade negativa não formam uma tarefa válida. A entidade também rejeita um identificador não positivo quando ele existe.
+A exceção `TaskValidationError` pertence ao domínio. O controller a traduz para HTTP `400`, mas o domínio não conhece o significado de HTTP. Isso mantém a regra reutilizável por outros adaptadores.
 
-O domínio não importa Flask, Peewee, SQLAlchemy, SQLite ou qualquer biblioteca HTTP. Isso permite importar e testar `Task` em qualquer contexto Python.
+## 3. Portas em `usecases/ports.py`
 
-## 3. Boundaries e casos de uso
+O arquivo de portas contém dois contratos usando `typing.Protocol`.
 
-O arquivo `usecases/ports.py` define duas boundaries usando `typing.Protocol`.
+`TaskIncomeBoundary` é a porta de entrada. Ela descreve os casos de uso que um adaptador de entrega pode chamar: `create` e `update`.
 
-`TaskIncomeBoundary` é a porta de entrada. Ela descreve o que um adaptador externo pode pedir à aplicação: criar e atualizar uma tarefa.
+`TaskDatasourceBoundary` é a porta de saída. Ela descreve o que o caso de uso precisa do armazenamento: criar, procurar e atualizar uma tarefa.
 
-`TaskDatasourceBoundary` é a porta de saída. Ela descreve o que a aplicação precisa do armazenamento: criar, procurar e atualizar uma tarefa. As duas portas ficam juntas em `usecases/ports.py`, acompanhando a organização adotada na branch `feature/layered-architecture`.
+```python
+@runtime_checkable
+class TaskIncomeBoundary(Protocol):
+    def create(self, task: Task) -> Task:
+        ...
 
-Um `Protocol` é uma forma de tipagem estrutural. Uma classe não precisa herdar explicitamente de `TaskDatasourceBoundary`; basta oferecer os métodos compatíveis. `TaskIncomeBoundary` usa também `runtime_checkable`, então os testes podem confirmar com `isinstance` que `TaskService` oferece a porta de entrada. Isso é útil em Python porque permite usar o datasource real em produção e um fake em testes.
+    def update(self, task: Task) -> None:
+        ...
+```
 
-`TaskService` implementa os casos de uso. Ao atualizar, ele primeiro procura a entidade pela porta de saída. Se não encontrar, levanta `TaskNotFoundError`. Se os valores já forem iguais, não chama a operação de atualização. Caso contrário, delega a mudança ao datasource.
+`Protocol` usa tipagem estrutural: uma classe pode satisfazer o contrato por possuir os métodos corretos, sem precisar herdar de uma classe-base. `runtime_checkable` permite uma verificação simples em testes:
+
+```python
+assert isinstance(service, TaskIncomeBoundary)
+```
+
+Essa verificação serve para confirmar a composição; ela não substitui injeção de dependências. A instância concreta ainda é criada explicitamente em `create_app`.
+
+## 4. Caso de uso em `usecases/service.py`
+
+`TaskService` implementa `TaskIncomeBoundary` e recebe `TaskDatasourceBoundary` no construtor:
+
+```python
+class TaskService(TaskIncomeBoundary):
+    def __init__(self, task_source: TaskDatasourceBoundary):
+        self._task_source = task_source
+```
+
+No caso de uso de criação, a entidade é encaminhada para a porta de persistência. No caso de atualização, o serviço procura a entidade pelo identificador. Se ela não existir, levanta `TaskNotFoundError`. Se descrição e prioridade forem iguais, não executa uma atualização desnecessária. Caso contrário, chama `update` no datasource.
 
 ```python
 existing = self._task_source.find(task.id)
@@ -71,39 +97,33 @@ if existing.description == task.description and existing.priority == task.priori
 self._task_source.update(task)
 ```
 
-Observe que `TaskService` não sabe que o banco é SQLite. Ele também não conhece o Flask, o formato JSON ou o código HTTP `404`.
+O serviço não conhece JSON, Flask, status HTTP, Peewee ou SQLite. Por isso, seus testes usam um datasource em memória.
 
-## 4. Adaptadores de entrada
+## 5. Applications: controllers e DTOs
 
-`adapters/presenters.py` contém `TaskDto`, que transforma um dicionário JSON em uma entidade de domínio. O presenter é uma fronteira entre dados externos e objetos internos.
+`applications/dtos.py` contém `TaskDto`. Ele recebe um dicionário JSON e cria uma entidade de domínio com `to_domain`. Para atualização, o identificador vem da URL e é passado como `task_id`.
 
-```python
-TaskDto.from_payload(payload).to_domain()
-```
-
-A conversão de atualização recebe o identificador da URL:
+`applications/controllers.py` contém `create_tasks_blueprint`. A fábrica recebe `TaskIncomeBoundary` como dependência:
 
 ```python
-TaskDto.from_payload(payload).to_domain(task_id=task_id)
+def create_tasks_blueprint(task_income_boundary: TaskIncomeBoundary) -> Blueprint:
+    ...
 ```
 
-`adapters/controllers.py` cria um Blueprint Flask por meio de `create_tasks_blueprint`. A função recebe `TaskIncomeBoundary` como parâmetro. Essa injeção é importante: o controller não instancia `TaskService` e não abre o banco.
+Essa assinatura é importante. O controller não cria `TaskService`, não abre conexão e não conhece a implementação Peewee. Ele apenas traduz:
 
-A criação percorre estes passos:
+1. HTTP para um payload JSON.
+2. Payload para `TaskDto`.
+3. DTO para `Task`.
+4. Chamada à porta de entrada.
+5. Entidade resultante para JSON.
+6. Exceções de domínio/aplicação para respostas HTTP.
 
-1. O Flask recebe `POST /tasks`.
-2. `_read_payload` verifica e decodifica JSON.
-3. `TaskDto` transforma o dicionário em `Task`.
-4. A boundary de entrada chama `TaskService.create`.
-5. A entidade criada volta pelo mesmo fluxo em sentido contrário.
-6. `task_to_dto` transforma a entidade em JSON.
-7. O controller retorna `201` e o cabeçalho `Location`.
+A criação responde `201` e define `Location: /tasks/{id}`. A atualização responde `200`. Erros de validação respondem `400`, tarefa ausente responde `404` e falhas inesperadas respondem `500`.
 
-O controller traduz exceções internas para HTTP. `TaskValidationError` vira `400`, `TaskNotFoundError` vira `404` e falhas inesperadas viram `500`.
+## 6. Infrastructures e Peewee
 
-## 5. Adaptadores de saída e Peewee
-
-`frameworks/peewee_models.py` define `TaskModel`, que é uma representação de persistência. Ele não é a entidade de domínio. Essa distinção é importante porque o modelo Peewee contém detalhes de banco, enquanto `Task` contém regras do negócio.
+`infrastructures/peewee_models.py` define `TaskModel`, uma representação de persistência distinta da entidade `Task`:
 
 ```python
 class TaskModel(PeeweeBaseModel):
@@ -112,20 +132,9 @@ class TaskModel(PeeweeBaseModel):
     priority = IntegerField(null=False)
 ```
 
-O método `to_domain` converte o registro externo em entidade interna:
+A separação impede que detalhes do ORM vazem para o domínio. `to_domain` converte um registro Peewee em `Task`.
 
-```python
-def to_domain(self) -> Task:
-    return Task(
-        id=self.id,
-        description=self.description,
-        priority=self.priority,
-    )
-```
-
-`frameworks/peewee_datasource.py` implementa `TaskDatasourceBoundary`. Ele usa `TaskModel.create`, `get_or_none` e `save`, mas esses detalhes ficam restritos ao círculo externo.
-
-A criação é transacional:
+`infrastructures/peewee_datasource.py` implementa `TaskDatasourceBoundary`. Ele usa `TaskModel.create`, `get_or_none` e `save` dentro de transações `database.atomic()`.
 
 ```python
 with self._database.atomic():
@@ -135,13 +144,11 @@ with self._database.atomic():
     )
 ```
 
-`atomic()` confirma a transação se o bloco termina sem erro e faz rollback se uma exceção é levantada. O caso de uso não precisa conhecer esse mecanismo.
+Se o bloco termina normalmente, a transação é confirmada. Se uma exceção acontece, o Peewee desfaz a operação. O `TaskService` não precisa conhecer esse detalhe.
 
-## 6. Composition root
+## 7. Composition root em `app/__init__.py`
 
-O arquivo `app/__init__.py` é o composition root. Ele é o único ponto que conhece a entidade concreta Peewee, o datasource concreto, o serviço e o controller.
-
-A composição é equivalente a:
+A função `create_app` é a application factory e o composition root. Ela cria o Flask, lê `DATABASE_URL`, instancia `SqliteDatabase`, associa `TaskModel`, cria a tabela e conecta os componentes:
 
 ```python
 datasource = PeeweeTaskDatasource(database)
@@ -149,87 +156,65 @@ task_income_boundary = TaskService(datasource)
 app.register_blueprint(create_tasks_blueprint(task_income_boundary))
 ```
 
-O fluxo de dependências é montado de fora para dentro:
+As dependências são montadas de fora para dentro:
 
 ```text
 SqliteDatabase
   -> PeeweeTaskDatasource
   -> TaskService
-  -> create_tasks_blueprint
-  -> Flask app
+  -> TaskIncomeBoundary
+  -> Flask Blueprint
 ```
 
-Isso substitui a descoberta automática de dependências feita pelo Spring. Em Python, essa composição explícita é simples de ler e fácil de substituir nos testes.
+O ciclo de vida da conexão é controlado por `before_request` e `teardown_request`. A conexão abre antes da requisição e fecha ao final. O banco padrão é `tasks.db`.
 
-## 7. Flask e ciclo de vida do SQLite
+## 8. Flask e SQLite
 
-A fábrica `create_app` cria uma instância Flask e permite substituir configurações nos testes. O banco padrão usa `sqlite:///tasks.db`.
+Flask registra o Blueprint com o prefixo `/tasks`. As rotas disponíveis são `POST /tasks`, `POST /tasks/` e `PUT /tasks/<int:task_id>`. `GET` e `DELETE` continuam fora do escopo porque não estavam implementados no projeto original.
 
-Na inicialização, `SqliteDatabase` é criado, o modelo é associado com `database.bind` e a tabela é criada com `create_tables`. Antes de cada requisição, a conexão é aberta. Ao final, a conexão é fechada por `teardown_request`.
-
-SQLite é um banco relacional embutido. Ele armazena tabelas, chaves e transações em um arquivo sem precisar de um servidor separado. Essa característica é adequada ao POC e aos testes temporários.
-
-A branch aceita URLs `sqlite:///`. Para um arquivo relativo:
+SQLite é um banco relacional embutido em arquivo. Ele não exige um servidor separado, o que o torna adequado para este POC e para testes temporários. A configuração padrão é:
 
 ```bash
-DATABASE_URL='sqlite:///tasks.db' python run.py
+python run.py
 ```
 
-Para um caminho absoluto em Linux:
+Para outro arquivo:
 
 ```bash
-DATABASE_URL='sqlite:////tmp/py-just-to-code.db' python run.py
+DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
 ```
 
-Em uma aplicação maior, `create_tables` deve ser substituído por migrações versionadas, como Peewee Migrate.
+`create_tables` cria tabelas ausentes, mas não substitui migrações versionadas. Em uma aplicação maior, use uma ferramenta de migração e considere PostgreSQL para cenários de concorrência e disponibilidade maiores.
 
-## 8. Testes
+## 9. Testes
 
-`tests/test_tasks.py` verifica o contrato HTTP e a persistência real. Ele confirma `201`, `Location`, validações, atualização, `404` e métodos ainda não implementados.
+`tests/test_clean_architecture.py` testa o domínio e o serviço sem Flask, Peewee ou SQLite. `InMemoryDatasource` implementa os métodos necessários da porta de saída. O teste também verifica que `TaskService` implementa `TaskIncomeBoundary`.
 
-`tests/test_clean_architecture.py` usa `InMemoryDatasource`. Esse fake satisfaz a boundary de saída sem usar Peewee:
+`tests/test_tasks.py` testa a integração HTTP com SQLite temporário. Ele cobre criação, cabeçalho `Location`, validação, atualização, `404`, métodos não implementados e persistência do registro.
 
-```python
-@dataclass
-class InMemoryDatasource:
-    tasks: dict[int, Task]
-```
-
-Os testes demonstram que o caso de uso pode ser validado sem iniciar Flask, sem abrir SQLite e sem conhecer o adaptador de produção. Esse isolamento é uma das principais vantagens da Clean Architecture.
-
-Execute todos os testes com:
+Execute a suíte com:
 
 ```bash
 pytest
 ```
 
-## 9. Comparação com a branch Java
+## 10. Comparação com a implementação Java
 
-| Java `feat/clean-arch` | Python `feature/clean-architecture` |
+| Java `feat/clean-arch` | Python atual |
 |---|---|
-| `usecases.domains.Task` | `domain.task.Task` |
-| `TaskIncomeBoundary` | `usecases.ports.TaskIncomeBoundary` |
-| `TaskDatasourceBoundary` | `usecases.ports.TaskDatasourceBoundary` |
-| `usecases.services.TaskService` | `usecases.task_service.TaskService` |
-| `applications.presenters.TaskDto` | `adapters.presenters.TaskDto` |
-| `applications.datasources.TaskDatasource` | `frameworks.peewee_datasource.PeeweeTaskDatasource` |
-| `infrastructures.models.TaskModel` | `frameworks.peewee_models.TaskModel` |
-| Controller Spring | `adapters.controllers.create_tasks_blueprint` |
+| Domínio `Task` | `usecases/domains.py: Task` |
+| `TaskIncomeBoundary` | `usecases/ports.py: TaskIncomeBoundary` |
+| `TaskDatasourceBoundary` | `usecases/ports.py: TaskDatasourceBoundary` |
+| Serviço de caso de uso | `usecases/service.py: TaskService` |
+| Presenter/DTO | `applications/dtos.py: TaskDto` |
+| Controller | `applications/controllers.py` |
+| Modelo JPA | `infrastructures/peewee_models.py: TaskModel` |
+| Datasource JPA | `infrastructures/peewee_datasource.py: PeeweeTaskDatasource` |
 
-A versão Python preserva a ideia de boundaries e adaptadores, mas usa mecanismos idiomáticos da linguagem: dataclasses imutáveis, `Protocol`, composição explícita e fixtures simples do pytest.
+A versão Python preserva a separação entre boundaries, casos de uso e adaptadores, mas usa dataclasses, `Protocol`, pytest e composição explícita em vez de anotações e injeção automática do Spring.
 
-## 10. Limites e próximos passos
+## 11. Limites e evolução
 
-A API original ainda não implementa `GET` nem `DELETE`; essa ausência foi preservada para evitar mudar o contrato. Próximos casos de uso podem ser adicionados como novos métodos das boundaries, seguidos de adaptadores HTTP e persistência.
+A branch mantém deliberadamente o escopo do POC. Autenticação, autorização, OpenAPI, `GET`, `DELETE` e migrações não foram adicionados. Novos casos de uso devem ser expostos por uma porta, implementados no serviço e conectados a adaptadores sem inserir dependências externas no domínio.
 
-SQLite é adequado ao POC. Para concorrência e disponibilidade maiores, avalie PostgreSQL e implemente outro datasource atrás da mesma `TaskDatasourceBoundary`.
-
-A aplicação não inclui autenticação, autorização ou OpenAPI porque esses recursos não existem na origem. Eles devem ser adicionados como adaptadores e configurações externas, sem colocar detalhes de framework no domínio.
-
-## Referências
-
-[1]: https://flask.palletsprojects.com/en/stable/ "Flask Documentation"
-[2]: https://docs.peewee-orm.com/en/latest/peewee/quickstart.html "Peewee Quickstart"
-[3]: https://docs.peewee-orm.com/en/latest/peewee/transactions.html "Peewee Transactions"
-[4]: https://www.sqlite.org/docs.html "SQLite Documentation"
-[5]: https://docs.pytest.org/en/stable/ "pytest Documentation"
+Para trocar o banco, implemente `TaskDatasourceBoundary` em outro datasource e altere somente a composição em `create_app`. O controller e o serviço não precisam saber qual tecnologia está por trás da porta.

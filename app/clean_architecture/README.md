@@ -1,11 +1,20 @@
 # Clean Architecture
 
-A implementação segue a direção de dependências da Clean Architecture:
+A implementação atual separa regras de negócio, contratos, casos de uso, adaptadores de entrada e infraestrutura. Os nomes dos diretórios seguem a organização da branch:
 
-- `domain`: entidade `Task` e invariantes de negócio. Não importa Flask, Peewee ou SQLite.
-- `usecases`: boundaries de entrada/saída e `TaskService`. Define o que a aplicação faz, mas não como o banco funciona.
-- `adapters`: presenters e controller Flask. Converte JSON para entidades e entidades para respostas.
-- `frameworks`: detalhes externos. O `TaskModel` e `PeeweeTaskDatasource` implementam a persistência SQLite.
-- `app/__init__.py`: composition root. É o único lugar que conhece todas as implementações e faz a composição.
+| Área | Caminho | Responsabilidade |
+|---|---|---|
+| Domínios | `usecases/domains.py` | Entidade `Task` e validações invariantes. |
+| Portas | `usecases/ports.py` | Contratos `TaskIncomeBoundary` e `TaskDatasourceBoundary`. |
+| Serviço | `usecases/service.py` | Caso de uso de criação e atualização. |
+| Applications | `applications/controllers.py` | Controller Flask e rotas HTTP. |
+| DTOs | `applications/dtos.py` | Conversão entre JSON e entidade de domínio. |
+| Infrastructures | `infrastructures/peewee_models.py` | Modelo Peewee da tabela `task`. |
+| Datasource | `infrastructures/peewee_datasource.py` | Implementação SQLite da porta de persistência. |
+| Composição | `app/__init__.py` | Composition root da aplicação Flask. |
 
-O fluxo de dependência aponta para dentro. O controller depende de `TaskIncomeBoundary`, um `Protocol` de entrada, e o caso de uso depende de `TaskDatasourceBoundary`, um `Protocol` de saída. Ambos ficam em `usecases/ports.py`; o `TaskService` implementa a porta de entrada e o datasource Peewee implementa a porta de saída. `TaskIncomeBoundary` é `runtime_checkable`, permitindo verificar em testes que o serviço está conectado ao contrato correto. Isso permite testar o caso de uso com um fake em memória e trocar SQLite por outro armazenamento sem alterar o domínio.
+O fluxo de dependências aponta para dentro. O controller recebe `TaskIncomeBoundary`; o `TaskService` implementa essa porta e recebe `TaskDatasourceBoundary`; o `PeeweeTaskDatasource` implementa a porta de persistência. O domínio não conhece Flask, Peewee ou SQLite.
+
+`TaskIncomeBoundary` é um `Protocol` marcado como `runtime_checkable`, permitindo que os testes confirmem que o serviço oferece o contrato esperado. Essa verificação não transforma o protocolo em um container de dependências: a composição continua explícita em `create_app`.
+
+A aplicação preserva o contrato HTTP do POC Java: `POST /tasks` cria uma tarefa e `PUT /tasks/{id}` atualiza uma tarefa. As operações `GET` e `DELETE` continuam fora do escopo original.
