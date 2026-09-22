@@ -1,10 +1,22 @@
 # py-just_to_code
 
-Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado na branch `main`.
+Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado na branch Java `feat/clean-arch` nesta branch `feature/clean-architecture`.
 
-## Escopo preservado
+## Clean Architecture
 
-A branch de origem é um POC de API REST com o módulo de tarefas. O contrato disponível foi mantido:
+A implementação segue a direção de dependências da Clean Architecture:
+
+| Camada | Localização | Responsabilidade |
+|---|---|---|
+| Domínio | `app/clean_architecture/domain` | Entidade `Task` e invariantes, sem frameworks. |
+| Casos de uso | `app/clean_architecture/usecases` | Boundaries e `TaskService`, sem Flask ou Peewee. |
+| Adaptadores | `app/clean_architecture/adapters` | Controller HTTP e presenters JSON. |
+| Frameworks | `app/clean_architecture/frameworks` | Peewee, SQLite e modelo persistente. |
+| Composição | `app/__init__.py` | Conecta as implementações concretas. |
+
+O domínio não conhece detalhes externos. O caso de uso depende de `TaskDatasourceBoundary`, definido como `Protocol`. O datasource Peewee implementa essa boundary. O controller recebe `TaskIncomeBoundary` por injeção, em vez de criar diretamente o serviço ou o banco.
+
+## Contrato preservado
 
 | Método | Endpoint | Resultado |
 |---|---|---|
@@ -13,15 +25,7 @@ A branch de origem é um POC de API REST com o módulo de tarefas. O contrato di
 | `GET` | `/tasks` e `/tasks/{id}` | Ainda não implementado na origem (`405`) |
 | `DELETE` | `/tasks/{id}` | Ainda não implementado na origem (`405`) |
 
-O corpo de entrada e saída usa somente `description` e `priority`. `description` não pode ser nula/branca e `priority` deve ser um inteiro não negativo. Erros retornam `{"message": "...", "status": <http status>}`.
-
-## Alternativas Flask
-
-- **Spring Boot MVC** foi substituído por **Flask Blueprints**, mantendo as rotas REST e os códigos HTTP.
-- **Spring Data JPA/H2** foi substituído nesta branch por **Peewee + SQLite**. Peewee é uma alternativa ORM leve e explícita para o POC; a branch aceita URLs SQLite e mantém as transações com `database.atomic()`.
-- **Injeção de dependências Spring** foi reduzida a uma fábrica de aplicação Flask e uma `TaskService` explícita, o que mantém as camadas controller/service/model sem adicionar um container de DI para este POC.
-- A **H2 Console** não possui equivalente nativo no Flask. Para inspeção local, use uma ferramenta SQLite ou conecte o arquivo `tasks.db`; não foi adicionada uma rota administrativa para não ampliar a superfície da API.
-- Swagger/OpenAPI não existia na origem; portanto não foi inventado no port.
+`description` não pode ser nula ou vazia, e `priority` deve ser um inteiro não negativo. Erros usam o formato `{"message": "...", "status": <http status>}`.
 
 ## Executar
 
@@ -32,13 +36,10 @@ pip install -e '.[test]'
 python run.py
 ```
 
-A API fica disponível em `http://localhost:8080`.
-
-Para usar outro banco:
+A API fica disponível em `http://localhost:8080`. O banco padrão é o arquivo SQLite `tasks.db`. Para executar com outro arquivo:
 
 ```bash
-DATABASE_URL='sqlite:///tasks.db' python run.py
-# Exemplo para PostgreSQL: DATABASE_URL='postgresql+psycopg://user:password@host/db' python run.py
+DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
 ```
 
 ## Testar
@@ -47,9 +48,15 @@ DATABASE_URL='sqlite:///tasks.db' python run.py
 pytest
 ```
 
-## Manual de estudo
+A suíte contém testes de integração HTTP e testes unitários do caso de uso com um datasource em memória. Dessa forma, a regra da aplicação é testada sem Flask, Peewee ou SQLite.
 
-O manual [tips/manual.md](tips/manual.md) explica toda a implementação, o fluxo de uma requisição Flask, Blueprints, conexões Peewee, transações SQLite, testes e as diferenças em relação ao projeto Java original.
+## Documentação
+
+O manual [tips/manual.md](tips/manual.md) explica a Clean Architecture, o fluxo de dependências, Flask, Peewee, SQLite, boundaries, adaptadores e testes. A estrutura também está resumida em [app/clean_architecture/README.md](app/clean_architecture/README.md).
+
+## Alternativas ao Java
+
+Spring MVC foi substituído por Flask. `TaskIncomeBoundary` e `TaskDatasourceBoundary` substituem as interfaces de entrada e saída da aplicação Java. `TaskModel` e `PeeweeTaskDatasource` substituem a entidade JPA e o datasource adaptador. A composição explícita no `create_app` substitui a configuração automática do container Spring.
 
 ## Licença
 

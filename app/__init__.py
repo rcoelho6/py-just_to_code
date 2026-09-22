@@ -5,11 +5,16 @@ import os
 from flask import Flask
 from peewee import SqliteDatabase
 
+from app.clean_architecture.adapters.controllers import create_tasks_blueprint
+from app.clean_architecture.frameworks.peewee_datasource import PeeweeTaskDatasource
+from app.clean_architecture.frameworks.peewee_models import TaskModel
+from app.clean_architecture.usecases.task_service import TaskService
+
 
 def _sqlite_path(database_url: str) -> str:
-    """Convert a sqlite:/// URL into a filesystem path for Peewee."""
+    """Convert a sqlite:/// URL into the path expected by Peewee."""
     if not database_url.startswith("sqlite:///"):
-        raise ValueError("Only SQLite DATABASE_URL values are supported by this branch")
+        raise ValueError("Only SQLite DATABASE_URL values are supported")
     path = database_url.removeprefix("sqlite:///")
     if not path:
         raise ValueError("SQLite DATABASE_URL must include a database path")
@@ -25,15 +30,20 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
-    database = SqliteDatabase(_sqlite_path(app.config["DATABASE_URL"]), pragmas={"foreign_keys": 1})
-    app.extensions["database"] = database
-
-    from .models import Task
-
-    database.bind([Task], bind_refs=False, bind_backrefs=False)
+    database = SqliteDatabase(
+        _sqlite_path(app.config["DATABASE_URL"]),
+        pragmas={"foreign_keys": 1},
+    )
+    database.bind([TaskModel], bind_refs=False, bind_backrefs=False)
     database.connect(reuse_if_open=True)
-    database.create_tables([Task])
+    database.create_tables([TaskModel])
     database.close()
+
+    datasource = PeeweeTaskDatasource(database)
+    task_income_boundary = TaskService(datasource)
+    app.extensions["database"] = database
+    app.extensions["task_income_boundary"] = task_income_boundary
+    app.register_blueprint(create_tasks_blueprint(task_income_boundary))
 
     @app.before_request
     def open_database_connection():
@@ -45,12 +55,4 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not database.is_closed():
             database.close()
 
-    from .routes import tasks_bp
-    app.register_blueprint(tasks_bp)
     return app
-
-
-def get_database() -> SqliteDatabase:
-    from flask import current_app
-
-    return current_app.extensions["database"]
