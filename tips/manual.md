@@ -1,6 +1,6 @@
 # Manual de estudo do `py-just_to_code` com Peewee
 
-Este manual explica o código do projeto Flask que replica o POC `just_to_code`, originalmente implementado com Spring Boot, Spring Data JPA e H2. Nesta branch, `feature/orm-peewee`, o acesso ao SQLite é feito pelo **Peewee**, um ORM pequeno e direto para Python.
+Este manual explica o código do projeto Flask que replica o POC `just_to_code`, originalmente implementado com Spring Boot, Spring Data JPA e H2. Nesta branch, `feature/layered-architecture`, o acesso ao SQLite é feito pelo **Peewee**, e o código é organizado em camadas inspiradas na arquitetura `main` do projeto Java.
 
 > **Resumo:** a aplicação expõe `POST /tasks` para criar tarefas e `PUT /tasks/{id}` para atualizá-las. O projeto original não implementava listagem, consulta individual nem exclusão; por isso essas operações continuam fora do escopo.
 
@@ -9,10 +9,13 @@ Este manual explica o código do projeto Flask que replica o POC `just_to_code`,
 | Arquivo | Responsabilidade |
 |---|---|
 | `run.py` | Inicia o servidor Flask. |
-| `app/__init__.py` | Cria a aplicação, configura o SQLite e controla conexões por requisição. |
-| `app/routes.py` | Define rotas HTTP, lê JSON e monta respostas. |
-| `app/models.py` | Define a tabela Peewee, valida dados e converte respostas. |
-| `app/services.py` | Executa criação e atualização dentro de transações Peewee. |
+| `app/__init__.py` | Composition root: cria Flask, SQLite, repositório, serviço e Blueprint. |
+| `app/domain/entities.py` | Entidade `Task` e regras de validação, sem dependências externas. |
+| `app/application/ports.py` | Contrato `TaskRepository` usado pela aplicação. |
+| `app/application/services.py` | Casos de uso de criação e atualização. |
+| `app/infrastructure/persistence/models.py` | Modelo Peewee ligado à tabela SQLite. |
+| `app/infrastructure/persistence/repositories.py` | Adapta Peewee ao contrato do repositório. |
+| `app/interfaces/http/routes.py` | Traduz HTTP/JSON para chamadas do serviço. |
 | `tests/test_tasks.py` | Testa a API usando o cliente de testes do Flask. |
 
 O fluxo de uma criação é:
@@ -20,13 +23,20 @@ O fluxo de uma criação é:
 ```text
 Cliente HTTP
   -> POST /tasks
-  -> Blueprint em app/routes.py
-  -> build_task e validação em app/models.py
-  -> TaskService em app/services.py
-  -> Peewee Session/Database
+  -> Blueprint criado por app/interfaces/http/routes.py
+  -> Entidade Task em app/domain/entities.py
+  -> TaskService em app/application/services.py
+  -> TaskRepository em app/application/ports.py
+  -> PeeweeTaskRepository em infrastructure/persistence
   -> SQLite: INSERT na tabela task
   -> Resposta JSON 201 + Location: /tasks/{id}
 ```
+
+### 1.1 Regra de dependência
+
+A regra principal é que as camadas internas não conhecem detalhes externos. O domínio não importa Flask nem Peewee. A aplicação depende apenas da entidade e do protocolo `TaskRepository`. A infraestrutura conhece Peewee e implementa esse protocolo. A camada HTTP conhece Flask e chama a aplicação. O arquivo `app/__init__.py` conecta todas as peças.
+
+Essa separação permite testar `TaskService` com um repositório em memória, sem iniciar Flask e sem abrir SQLite. Também permite substituir Peewee por outro mecanismo de persistência sem alterar a entidade ou as rotas.
 
 ## 2. Preparar e executar
 
@@ -88,13 +98,16 @@ A configuração `DATABASE_URL` vem de variável de ambiente quando existir. Cas
 
 ### 3.2 Blueprints e rotas
 
-As rotas de tarefas ficam em um Blueprint:
+As rotas de tarefas são criadas por uma fábrica de Blueprint. A fábrica recebe `TaskService` como dependência:
 
 ```python
-tasks_bp = Blueprint("tasks", __name__, url_prefix="/tasks")
+def create_tasks_blueprint(service: TaskService) -> Blueprint:
+    blueprint = Blueprint("tasks", __name__, url_prefix="/tasks")
+    ...
+    return blueprint
 ```
 
-O Blueprint é registrado na aplicação com `app.register_blueprint(tasks_bp)`. O prefixo evita repetir `/tasks` em cada definição.
+O Blueprint é registrado no composition root com `app.register_blueprint(create_tasks_blueprint(service))`. O prefixo evita repetir `/tasks` em cada definição e a injeção explícita evita que a rota crie seu próprio banco ou serviço.
 
 A criação aceita `/tasks` e `/tasks/`:
 
@@ -235,7 +248,7 @@ class BaseModel(Model):
 Depois define a tabela de tarefas:
 
 ```python
-class Task(BaseModel):
+class PeeweeTask(BaseModel):
     id = AutoField()
     description = TextField(null=False)
     priority = IntegerField(null=False)
@@ -254,7 +267,7 @@ As colunas correspondem a:
 A aplicação liga o modelo ao banco criado para aquela instância:
 
 ```python
-database.bind([Task], bind_refs=False, bind_backrefs=False)
+database.bind([PeeweeTask], bind_refs=False, bind_backrefs=False)
 ```
 
 Essa ligação é especialmente útil nos testes, porque cada aplicação pode usar um arquivo SQLite diferente.
@@ -265,7 +278,7 @@ Depois de vincular o modelo, a aplicação abre o banco e cria a tabela se ela a
 
 ```python
 database.connect(reuse_if_open=True)
-database.create_tables([Task])
+database.create_tables([PeeweeTask])
 database.close()
 ```
 
@@ -273,14 +286,17 @@ database.close()
 
 ### 5.4 Inserção
 
-No serviço, uma tarefa é inserida assim:
+No repositório, uma tarefa de domínio é inserida assim:
 
 ```python
-with self.database.atomic():
-    task.save(force_insert=True)
+with self._database.atomic():
+    record = PeeweeTask.create(
+        description=task.description,
+        priority=task.priority,
+    )
 ```
 
-`save` gera um `INSERT` e atualiza `task.id` com o valor gerado pelo SQLite. `force_insert=True` deixa explícito que a operação deve ser uma inserção, e não uma tentativa de atualização de um registro existente.
+`create` gera um `INSERT` e atualiza `record.id` com o valor gerado pelo SQLite. A entidade de domínio continua independente do objeto Peewee.
 
 O bloco `atomic()` abre uma transação. Se o bloco termina normalmente, a transação é confirmada. Se uma exceção ocorre, a transação é revertida.
 
@@ -289,7 +305,7 @@ O bloco `atomic()` abre uma transação. Se o bloco termina normalmente, a trans
 O serviço procura um registro com:
 
 ```python
-existing = Task.get_or_none(Task.id == task.id)
+existing = PeeweeTask.get_or_none(PeeweeTask.id == task.id)
 ```
 
 O Peewee transforma essa expressão em uma consulta SQL parametrizada parecida com:
@@ -301,7 +317,7 @@ WHERE id = ?
 LIMIT 1;
 ```
 
-`get_or_none` retorna um objeto `Task` quando encontra o registro e `None` quando não encontra. Por isso, o serviço pode converter ausência em `TaskNotFoundError`.
+`get_or_none` retorna um objeto `PeeweeTask` quando encontra o registro e `None` quando não encontra. O repositório converte o resultado para a entidade `Task`; assim, a camada de aplicação não precisa conhecer Peewee.
 
 Também é possível consultar diretamente no interpretador Python:
 
@@ -317,7 +333,7 @@ Quando os valores mudaram, o serviço altera o objeto carregado e salva apenas a
 ```python
 existing.description = task.description
 existing.priority = task.priority
-existing.save(only=[Task.description, Task.priority])
+record.save(only=[PeeweeTask.description, PeeweeTask.priority])
 ```
 
 O Peewee gera um `UPDATE` usando a chave primária do objeto. O argumento `only` deixa claro que o identificador não deve ser alterado.

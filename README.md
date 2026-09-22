@@ -2,6 +2,8 @@
 
 Port em Python/Flask do projeto [`just_to_code`](https://github.com/rcoelho6/just_to_code), baseado na branch `main`.
 
+Esta branch, `feature/layered-architecture`, reorganiza a implementação Peewee em camadas inspiradas na arquitetura do projeto Java de origem. O domínio não conhece Flask ou Peewee, a aplicação depende de uma porta de persistência e a infraestrutura fornece a implementação concreta para SQLite.
+
 ## Escopo preservado
 
 A branch de origem é um POC de API REST com o módulo de tarefas. O contrato disponível foi mantido:
@@ -19,7 +21,7 @@ O corpo de entrada e saída usa somente `description` e `priority`. `description
 
 - **Spring Boot MVC** foi substituído por **Flask Blueprints**, mantendo as rotas REST e os códigos HTTP.
 - **Spring Data JPA/H2** foi substituído nesta branch por **Peewee + SQLite**. Peewee é uma alternativa ORM leve e explícita para o POC; a branch aceita URLs SQLite e mantém as transações com `database.atomic()`.
-- **Injeção de dependências Spring** foi reduzida a uma fábrica de aplicação Flask e uma `TaskService` explícita, o que mantém as camadas controller/service/model sem adicionar um container de DI para este POC.
+- **Injeção de dependências Spring** foi substituída por composição explícita no `create_app`, usando `TaskRepository`, `TaskService` e `create_tasks_blueprint`.
 - A **H2 Console** não possui equivalente nativo no Flask. Para inspeção local, use uma ferramenta SQLite ou conecte o arquivo `tasks.db`; não foi adicionada uma rota administrativa para não ampliar a superfície da API.
 - Swagger/OpenAPI não existia na origem; portanto não foi inventado no port.
 
@@ -49,7 +51,7 @@ pytest
 
 ## Manual de estudo
 
-O manual [tips/manual.md](tips/manual.md) explica toda a implementação, o fluxo de uma requisição Flask, Blueprints, conexões Peewee, transações SQLite, testes e as diferenças em relação ao projeto Java original.
+O manual [tips/manual.md](tips/manual.md) explica toda a implementação, o fluxo de uma requisição Flask, Blueprints, conexões Peewee, transações SQLite, testes e as diferenças em relação ao projeto Java original. A organização dos pacotes também está resumida em [app/README.md](app/README.md).
 
 ## Licença
 

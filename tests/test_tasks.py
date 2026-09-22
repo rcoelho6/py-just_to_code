@@ -1,7 +1,8 @@
 import pytest
 
 from app import create_app
-from app.models import Task
+from app.domain.entities import Task
+from app.infrastructure.persistence.models import PeeweeTask
 
 
 @pytest.fixture
@@ -20,7 +21,7 @@ def test_create_returns_201_location_and_persists(client):
     assert response.headers["Location"] == "/tasks/1"
     assert response.json == {"description": "created", "priority": 5}
 
-    task = Task.get_by_id(1)
+    task = PeeweeTask.get_by_id(1)
     assert task.description == "created"
     assert task.priority == 5
 
@@ -68,3 +69,8 @@ def test_unimplemented_methods_are_not_available(client, method):
 def test_post_with_id_is_not_allowed(client):
     response = client.post("/tasks/1", json={"description": "created", "priority": 5})
     assert response.status_code == 405
+
+
+def test_domain_entity_does_not_depend_on_frameworks():
+    task = Task(description="pure domain", priority=1, id=10)
+    assert task.id == 10
