@@ -3,12 +3,17 @@ from __future__ import annotations
 import os
 
 from flask import Flask
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from peewee import SqliteDatabase
 
 
-class Base(DeclarativeBase):
-    pass
+def _sqlite_path(database_url: str) -> str:
+    """Convert a sqlite:/// URL into a filesystem path for Peewee."""
+    if not database_url.startswith("sqlite:///"):
+        raise ValueError("Only SQLite DATABASE_URL values are supported by this branch")
+    path = database_url.removeprefix("sqlite:///")
+    if not path:
+        raise ValueError("SQLite DATABASE_URL must include a database path")
+    return path
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -20,32 +25,32 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
-    engine = create_engine(app.config["DATABASE_URL"], future=True)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-    app.extensions["engine"] = engine
-    app.extensions["session_factory"] = session_factory
+    database = SqliteDatabase(_sqlite_path(app.config["DATABASE_URL"]), pragmas={"foreign_keys": 1})
+    app.extensions["database"] = database
 
     from .models import Task
-    Base.metadata.create_all(engine)
+
+    database.bind([Task], bind_refs=False, bind_backrefs=False)
+    database.connect(reuse_if_open=True)
+    database.create_tables([Task])
+    database.close()
+
+    @app.before_request
+    def open_database_connection():
+        if database.is_closed():
+            database.connect()
+
+    @app.teardown_request
+    def close_database_connection(_exception=None):
+        if not database.is_closed():
+            database.close()
 
     from .routes import tasks_bp
     app.register_blueprint(tasks_bp)
-
-    @app.teardown_appcontext
-    def close_session(_exception=None):
-        session = getattr(app, "_request_session", None)
-        if session is not None:
-            session.close()
-            app._request_session = None
-
     return app
 
 
-def get_session() -> Session:
+def get_database() -> SqliteDatabase:
     from flask import current_app
 
-    session = getattr(current_app, "_request_session", None)
-    if session is None:
-        session = current_app.extensions["session_factory"]()
-        current_app._request_session = session
-    return session
+    return current_app.extensions["database"]

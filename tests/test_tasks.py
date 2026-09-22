@@ -14,16 +14,15 @@ def client(app):
     return app.test_client()
 
 
-def test_create_returns_201_location_and_persists(client, app):
+def test_create_returns_201_location_and_persists(client):
     response = client.post("/tasks", json={"description": "created", "priority": 5})
     assert response.status_code == 201
     assert response.headers["Location"] == "/tasks/1"
     assert response.json == {"description": "created", "priority": 5}
 
-    with app.extensions["session_factory"]() as session:
-        task = session.get(Task, 1)
-        assert task.description == "created"
-        assert task.priority == 5
+    task = Task.get_by_id(1)
+    assert task.description == "created"
+    assert task.priority == 5
 
 
 def test_create_accepts_trailing_slash(client):

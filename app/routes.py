@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from . import get_session
-from .models import Task, ValidationError, task_dto
+from . import get_database
+from .models import ValidationError, build_task, task_dto
 from .services import TaskNotFoundError, TaskService
 
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/tasks")
@@ -29,17 +29,15 @@ def create():
     if error:
         return error
     try:
-        task = Task(description=payload.get("description"), priority=payload.get("priority"))
-        TaskService(get_session()).create(task)
+        task = build_task(description=payload.get("description"), priority=payload.get("priority"))
+        TaskService(get_database()).create(task)
         response = jsonify(task_dto(task))
         response.status_code = 201
         response.headers["Location"] = f"/tasks/{task.id}"
         return response
     except ValidationError as exc:
-        get_session().rollback()
         return error_response(f"Erro with status 400: {exc}", 400)
     except Exception as exc:
-        get_session().rollback()
         return error_response(f"Unexpected error {exc}", 500)
 
 
@@ -49,17 +47,14 @@ def update(task_id: int):
     if error:
         return error
     try:
-        task = Task(description=payload.get("description"), priority=payload.get("priority"), id=task_id, updating=True)
-        TaskService(get_session()).update(task)
+        task = build_task(description=payload.get("description"), priority=payload.get("priority"), task_id=task_id, updating=True)
+        TaskService(get_database()).update(task)
         return jsonify(task_dto(task)), 200
     except ValidationError as exc:
-        get_session().rollback()
         return error_response(f"Erro with status 400: {exc}", 400)
     except TaskNotFoundError as exc:
-        get_session().rollback()
         return error_response(f"Erro with status 404: {exc}", 404)
     except Exception as exc:
-        get_session().rollback()
         return error_response(f"Unexpected error {exc}", 500)
 
 

@@ -1,80 +1,48 @@
-# Manual de estudo do `py-just_to_code`
+# Manual de estudo do `py-just_to_code` com Peewee
 
-Este manual explica o código do projeto Flask que replica o POC `just_to_code`, originalmente implementado com Spring Boot, Spring Data JPA e H2. O objetivo é permitir que uma pessoa que ainda está aprendendo Python entenda o caminho completo de uma requisição HTTP, desde a entrada JSON até a persistência no SQLite.
+Este manual explica o código do projeto Flask que replica o POC `just_to_code`, originalmente implementado com Spring Boot, Spring Data JPA e H2. Nesta branch, `feature/orm-peewee`, o acesso ao SQLite é feito pelo **Peewee**, um ORM pequeno e direto para Python.
 
-> **Resumo do projeto:** a aplicação expõe `POST /tasks` para criar tarefas e `PUT /tasks/{id}` para atualizá-las. A branch de origem não implementava listagem, consulta individual ou exclusão; por isso, essas operações continuam fora do escopo deste port.
+> **Resumo:** a aplicação expõe `POST /tasks` para criar tarefas e `PUT /tasks/{id}` para atualizá-las. O projeto original não implementava listagem, consulta individual nem exclusão; por isso essas operações continuam fora do escopo.
 
-## 1. Visão geral da arquitetura
-
-O projeto separa responsabilidades em quatro partes principais:
+## 1. Arquitetura
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `run.py` | Ponto de entrada para iniciar o servidor Flask. |
-| `app/__init__.py` | Fábrica da aplicação, configuração do banco e ciclo de vida das sessões. |
-| `app/routes.py` | Rotas HTTP, leitura do JSON, códigos de status e respostas de erro. |
-| `app/models.py` | Modelo `Task`, mapeamento ORM e validação dos dados. |
-| `app/services.py` | Regras de persistência e operações de criação e atualização. |
-| `tests/test_tasks.py` | Testes de integração com o cliente de testes do Flask. |
+| `run.py` | Inicia o servidor Flask. |
+| `app/__init__.py` | Cria a aplicação, configura o SQLite e controla conexões por requisição. |
+| `app/routes.py` | Define rotas HTTP, lê JSON e monta respostas. |
+| `app/models.py` | Define a tabela Peewee, valida dados e converte respostas. |
+| `app/services.py` | Executa criação e atualização dentro de transações Peewee. |
+| `tests/test_tasks.py` | Testa a API usando o cliente de testes do Flask. |
 
 O fluxo de uma criação é:
 
 ```text
 Cliente HTTP
-    |
-    v
-POST /tasks
-    |
-    v
-Blueprint em app/routes.py
-    |
-    v
-Task + validação em app/models.py
-    |
-    v
-TaskService em app/services.py
-    |
-    v
-Session do SQLAlchemy
-    |
-    v
-SQLite: INSERT na tabela task
-    |
-    v
-Resposta JSON 201 + Location: /tasks/{id}
+  -> POST /tasks
+  -> Blueprint em app/routes.py
+  -> build_task e validação em app/models.py
+  -> TaskService em app/services.py
+  -> Peewee Session/Database
+  -> SQLite: INSERT na tabela task
+  -> Resposta JSON 201 + Location: /tasks/{id}
 ```
 
-A aplicação usa uma arquitetura em camadas simples. O Flask conhece a camada HTTP. O serviço conhece a persistência. O modelo representa os dados e suas regras básicas. Essa separação evita colocar toda a lógica dentro da função da rota.
-
-## 2. Preparar o ambiente
-
-Na raiz do projeto, crie um ambiente virtual e instale as dependências:
+## 2. Preparar e executar
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[test]'
-```
-
-O arquivo `pyproject.toml` declara duas dependências de execução:
-
-- **Flask** fornece o servidor web, roteamento, objetos de requisição e respostas JSON.
-- **SQLAlchemy** fornece o mapeamento objeto-relacional e a comunicação com o banco.
-
-O grupo opcional `test` instala o **pytest**, usado para executar a suíte automatizada.
-
-Para iniciar a aplicação:
-
-```bash
 python run.py
 ```
 
-O servidor escuta em `0.0.0.0:8080`. Para testar a criação em outro terminal:
+A aplicação fica disponível em `http://localhost:8080`. Para criar uma tarefa:
 
 ```bash
 curl -i -X POST http://localhost:8080/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"description":"Estudar Flask","priority":1}'
+  -d '{"description":"Estudar Peewee","priority":1}'
 ```
 
 A resposta esperada é semelhante a:
@@ -84,24 +52,26 @@ HTTP/1.1 201 CREATED
 Location: /tasks/1
 Content-Type: application/json
 
-{"description":"Estudar Flask","priority":1}
+{"description":"Estudar Peewee","priority":1}
 ```
 
-O arquivo `tasks.db` é criado automaticamente no diretório em que o processo é iniciado, porque a configuração padrão usa `sqlite:///tasks.db`.
+Execute os testes com:
 
-## 3. Como o Flask funciona neste projeto
+```bash
+pytest
+```
 
-### 3.1 Aplicação e fábrica
+## 3. Como o Flask funciona
 
-O Flask representa a aplicação web em um objeto `Flask`. Neste projeto, esse objeto é criado por `create_app()` em `app/__init__.py`.
+### 3.1 Application Factory
+
+O objeto principal do Flask é criado por `create_app` em `app/__init__.py`:
 
 ```python
 app = Flask(__name__)
 ```
 
-`__name__` informa ao Flask onde o módulo está localizado. Essa informação é usada para localizar recursos da aplicação.
-
-A função `create_app` é chamada de **application factory**, ou fábrica da aplicação. Em vez de criar uma aplicação global com configuração fixa, ela constrói uma instância configurável:
+O projeto usa o padrão **application factory**. Isso significa que a função cria uma nova aplicação sempre que é chamada. Assim, os testes podem usar um banco temporário sem alterar o banco de desenvolvimento.
 
 ```python
 def create_app(test_config: dict | None = None) -> Flask:
@@ -114,21 +84,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config.update(test_config)
 ```
 
-Essa abordagem é importante por dois motivos. Primeiro, os testes podem usar um banco temporário sem modificar o banco de desenvolvimento. Segundo, o mesmo código pode ser iniciado com configurações diferentes para desenvolvimento, testes e produção.
+A configuração `DATABASE_URL` vem de variável de ambiente quando existir. Caso contrário, o arquivo padrão é `tasks.db`.
 
-O parâmetro `test_config` começa como `None`. Quando recebe um dicionário, suas opções substituem as configurações padrão. Os testes usam esse mecanismo para ativar `TESTING` e indicar um arquivo SQLite temporário.
+### 3.2 Blueprints e rotas
 
-### 3.2 Blueprint e rotas
-
-As rotas são agrupadas em um `Blueprint`:
+As rotas de tarefas ficam em um Blueprint:
 
 ```python
 tasks_bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 ```
 
-Um Blueprint é um conjunto de rotas que pode ser registrado em uma aplicação. O `url_prefix` faz com que as rotas definidas como `""` e `"/"` sejam expostas como `/tasks` e `/tasks/`.
+O Blueprint é registrado na aplicação com `app.register_blueprint(tasks_bp)`. O prefixo evita repetir `/tasks` em cada definição.
 
-A rota de criação aceita as duas formas:
+A criação aceita `/tasks` e `/tasks/`:
 
 ```python
 @tasks_bp.route("", methods=["POST"])
@@ -137,7 +105,7 @@ def create():
     ...
 ```
 
-A rota de atualização captura o identificador da URL:
+A atualização captura um número da URL:
 
 ```python
 @tasks_bp.route("/<int:task_id>", methods=["PUT"])
@@ -145,50 +113,19 @@ def update(task_id: int):
     ...
 ```
 
-O conversor `<int:task_id>` faz o Flask aceitar apenas um valor inteiro nessa posição e entrega esse valor à função como `task_id`.
+O conversor `<int:task_id>` faz o Flask entregar o identificador como inteiro à função.
 
-O Blueprint é registrado em `create_app`:
+### 3.3 JSON, status e cabeçalhos
 
-```python
-app.register_blueprint(tasks_bp)
-```
+`request.is_json` verifica se o cliente informou um corpo JSON. Em seguida, `request.get_json(silent=True)` converte o corpo para um dicionário Python.
 
-Sem esse registro, o Flask conheceria o Blueprint, mas as rotas não fariam parte da aplicação final.
-
-### 3.3 Requisição e resposta
-
-O objeto `request` representa a requisição HTTP atual. A função `read_payload` verifica se o cliente enviou JSON:
+`jsonify` converte dicionários Python para JSON:
 
 ```python
-if not request.is_json:
-    return None, error_response("Erro with status 400: Request must be JSON", 400)
+return jsonify({"description": "Estudar", "priority": 1}), 200
 ```
 
-Depois, o corpo é convertido para um objeto Python:
-
-```python
-payload = request.get_json(silent=True)
-```
-
-Um objeto JSON como:
-
-```json
-{"description": "Estudar Flask", "priority": 1}
-```
-
-vira um dicionário Python equivalente a:
-
-```python
-{"description": "Estudar Flask", "priority": 1}
-```
-
-`jsonify` transforma um dicionário Python em uma resposta JSON e define o cabeçalho `Content-Type` apropriado:
-
-```python
-return jsonify({"description": "Estudar Flask", "priority": 1}), 200
-```
-
-Também é possível construir a resposta, alterar seu status e adicionar cabeçalhos:
+Na criação, a resposta é construída para incluir o identificador do novo registro:
 
 ```python
 response = jsonify(task_dto(task))
@@ -197,241 +134,216 @@ response.headers["Location"] = f"/tasks/{task.id}"
 return response
 ```
 
-O código `201 Created` informa que um recurso foi criado. O cabeçalho `Location` informa o endereço lógico desse novo recurso.
+O status `201` significa que um recurso foi criado. O cabeçalho `Location` informa o endereço desse recurso.
 
-### 3.4 Contexto da aplicação e contexto da requisição
+### 3.4 Ciclo de vida da conexão
 
-Durante uma requisição, o Flask mantém objetos contextuais, como `current_app` e `request`. A função `get_session` usa `current_app` para obter a fábrica de sessões configurada na aplicação atual:
-
-```python
-from flask import current_app
-
-session = current_app.extensions["session_factory"]()
-```
-
-Isso evita uma variável global de sessão compartilhada por todas as requisições. Cada requisição recebe sua própria sessão.
-
-Ao final da requisição, Flask chama a função registrada com `@app.teardown_appcontext`:
+O Flask permite executar funções antes e depois de cada requisição. Este projeto abre o SQLite antes da requisição:
 
 ```python
-@app.teardown_appcontext
-def close_session(_exception=None):
-    session = getattr(app, "_request_session", None)
-    if session is not None:
-        session.close()
-        app._request_session = None
+@app.before_request
+def open_database_connection():
+    if database.is_closed():
+        database.connect()
 ```
 
-Fechar a sessão libera recursos e impede que uma sessão seja reutilizada acidentalmente depois do fim da requisição.
+Depois, fecha a conexão:
+
+```python
+@app.teardown_request
+def close_database_connection(_exception=None):
+    if not database.is_closed():
+        database.close()
+```
+
+O objetivo é não manter uma conexão aberta indefinidamente. Cada requisição usa a conexão necessária e a libera ao terminar.
 
 ### 3.5 Tratamento de erros
 
-A função auxiliar `error_response` padroniza o formato das falhas:
+A função `error_response` garante um formato único:
 
 ```python
 def error_response(message: str, status: int):
     return jsonify({"message": message, "status": status}), status
 ```
 
-As rotas capturam erros de validação, recurso inexistente e falhas inesperadas. Por exemplo, quando o serviço não encontra o identificador solicitado, a rota retorna `404`:
+Erros de validação retornam `400`. Quando o identificador não existe, o serviço levanta `TaskNotFoundError` e a rota retorna `404`. Falhas inesperadas retornam `500`.
+
+Os handlers de `405` e `404` também retornam JSON. Por isso, métodos ainda não implementados não produzem uma página HTML padrão do Flask.
+
+## 4. Como o SQLite funciona
+
+SQLite é um banco relacional embutido. Ele não precisa de um servidor separado. A base de dados fica em um arquivo, neste caso `tasks.db`.
+
+Ele ainda possui tabelas, colunas, chaves, consultas e transações. A diferença é que o mecanismo roda dentro do processo da aplicação, e não como um serviço independente.
+
+A URL padrão é:
 
 ```python
-except TaskNotFoundError as exc:
-    get_session().rollback()
-    return error_response(f"Erro with status 404: {exc}", 404)
+sqlite:///tasks.db
 ```
 
-Os handlers do Blueprint tratam métodos e caminhos que não estão implementados:
+O prefixo `sqlite` define o banco. Os três caracteres `/` indicam um caminho relativo, e `tasks.db` é o arquivo.
 
-```python
-@tasks_bp.errorhandler(405)
-def method_not_allowed(_error):
-    return error_response("Method not allowed", 405)
+Para escolher outro arquivo:
+
+```bash
+DATABASE_URL='sqlite:///tmp/tasks.db' python run.py
 ```
 
-Assim, a API mantém uma resposta JSON mesmo quando o Flask rejeita o método HTTP antes de executar uma função de rota.
-
-## 4. Como o SQLite funciona neste projeto
-
-### 4.1 O que é SQLite
-
-SQLite é um banco de dados relacional embutido. Ele não precisa de um servidor separado. O banco inteiro pode ser armazenado em um único arquivo, como `tasks.db`.
-
-Essa característica é conveniente para um POC, exemplos locais e testes. O processo Flask abre o arquivo, executa comandos SQL e fecha os recursos por meio do driver e do SQLAlchemy.
-
-SQLite não é o mesmo que um banco “sem estrutura”. Ele continua oferecendo tabelas, colunas, tipos, chaves e transações. A diferença principal é que o mecanismo roda dentro do processo da aplicação, em vez de rodar como um serviço de banco separado.
-
-### 4.2 A URL de conexão
-
-A configuração padrão é:
-
-```python
-DATABASE_URL=os.getenv("DATABASE_URL", "sqlite:///tasks.db")
-```
-
-A expressão significa:
-
-- `sqlite` é o dialeto do banco.
-- `///` indica um caminho relativo ao diretório atual do processo.
-- `tasks.db` é o arquivo usado pelo banco.
-
-Para um caminho absoluto em Linux, pode-se usar uma URL como:
+Para um caminho absoluto no Linux:
 
 ```bash
 DATABASE_URL='sqlite:////tmp/py-just-to-code.db' python run.py
 ```
 
-Para testes, o projeto recebe uma URL temporária criada pelo pytest:
+Nesta branch, `_sqlite_path` converte a URL para o formato de caminho que o Peewee espera. A implementação rejeita outros bancos porque o objetivo desta branch é estudar Peewee com SQLite.
+
+## 5. Como o Peewee funciona
+
+### 5.1 Database
+
+O objeto `SqliteDatabase` representa a conexão e as operações com o arquivo SQLite:
 
 ```python
-{"DATABASE_URL": f"sqlite:///{tmp_path / 'test.db'}"}
-```
-
-Cada execução de teste fica isolada em seu próprio arquivo.
-
-### 4.3 Engine, Base e metadados
-
-O **engine** é o objeto que sabe como conectar o SQLAlchemy ao banco:
-
-```python
-engine = create_engine(app.config["DATABASE_URL"], future=True)
-```
-
-O projeto define uma classe base para os modelos ORM:
-
-```python
-class Base(DeclarativeBase):
-    pass
-```
-
-`Task` herda de `Base`. Com isso, o SQLAlchemy registra a definição da tabela nos metadados:
-
-```python
-class Task(Base):
-    __tablename__ = "task"
-```
-
-Na criação da aplicação, o projeto executa:
-
-```python
-Base.metadata.create_all(engine)
-```
-
-Esse comando cria as tabelas que ainda não existem. Ele não é um sistema completo de migrações: não renomeia colunas antigas nem controla com segurança alterações complexas de schema. Para este POC, ele é suficiente. Em um sistema maior, uma alternativa é usar Alembic para migrações versionadas.
-
-### 4.4 A tabela `task`
-
-O modelo define três colunas:
-
-```python
-id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-description: Mapped[str] = mapped_column(String, nullable=False)
-priority: Mapped[int] = mapped_column(Integer, nullable=False)
-```
-
-O SQLAlchemy mapeia essas declarações para uma tabela equivalente a:
-
-```sql
-CREATE TABLE task (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    description VARCHAR NOT NULL,
-    priority INTEGER NOT NULL
-);
-```
-
-O `id` identifica cada tarefa. O SQLite gera esse valor quando uma nova tarefa é inserida. `nullable=False` impede que a coluna seja nula no banco, embora a validação da aplicação produza mensagens mais claras antes da tentativa de inserção.
-
-### 4.5 Sessão e transação
-
-A `sessionmaker` cria sessões conectadas ao engine:
-
-```python
-session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-```
-
-A sessão representa uma unidade de trabalho. No método `create`, a tarefa é adicionada, a transação é confirmada e o objeto é atualizado com o identificador criado:
-
-```python
-self.session.add(task)
-self.session.commit()
-self.session.refresh(task)
-```
-
-A sequência é importante:
-
-1. `add` coloca o objeto no conjunto de mudanças pendentes.
-2. `commit` envia o `INSERT` ao SQLite e confirma a transação.
-3. `refresh` lê os valores persistidos, incluindo o `id` gerado.
-
-Quando há um erro depois de uma operação que poderia ter iniciado uma transação, a rota chama `rollback`:
-
-```python
-get_session().rollback()
-```
-
-O rollback desfaz as alterações não confirmadas da sessão. Sem ele, uma sessão pode permanecer em estado de erro e não aceitar operações posteriores.
-
-### 4.6 Consulta e atualização
-
-O serviço procura uma tarefa por identificador com uma expressão SQLAlchemy:
-
-```python
-existing = self.session.scalar(
-    select(Task).where(Task.id == task.id)
+database = SqliteDatabase(
+    _sqlite_path(app.config["DATABASE_URL"]),
+    pragmas={"foreign_keys": 1},
 )
 ```
 
-O SQLAlchemy traduz essa expressão para SQL equivalente a:
+O pragma `foreign_keys` instrui o SQLite a respeitar restrições de chave estrangeira. O modelo atual não possui uma relação, mas deixar essa opção ativa é uma configuração segura para futuras tabelas relacionadas.
+
+A aplicação registra o objeto no `app.extensions`:
+
+```python
+app.extensions["database"] = database
+```
+
+As extensões do Flask são um local apropriado para guardar recursos ligados à aplicação. `get_database()` recupera esse objeto usando `current_app`.
+
+### 5.2 Model e tabela
+
+No Peewee, uma classe que herda de `Model` representa uma tabela. O projeto define uma classe base:
+
+```python
+class BaseModel(Model):
+    class Meta:
+        database = None
+```
+
+Depois define a tabela de tarefas:
+
+```python
+class Task(BaseModel):
+    id = AutoField()
+    description = TextField(null=False)
+    priority = IntegerField(null=False)
+
+    class Meta:
+        table_name = "task"
+```
+
+As colunas correspondem a:
+
+- `AutoField`: chave primária inteira gerada automaticamente.
+- `TextField`: texto da descrição.
+- `IntegerField`: prioridade inteira.
+- `null=False`: a coluna não pode receber `NULL`.
+
+A aplicação liga o modelo ao banco criado para aquela instância:
+
+```python
+database.bind([Task], bind_refs=False, bind_backrefs=False)
+```
+
+Essa ligação é especialmente útil nos testes, porque cada aplicação pode usar um arquivo SQLite diferente.
+
+### 5.3 Criação da tabela
+
+Depois de vincular o modelo, a aplicação abre o banco e cria a tabela se ela ainda não existir:
+
+```python
+database.connect(reuse_if_open=True)
+database.create_tables([Task])
+database.close()
+```
+
+`create_tables` não é um sistema completo de migrações. Ele cria tabelas ausentes, mas não controla mudanças complexas em tabelas existentes. Em uma aplicação maior, use migrações versionadas, por exemplo com Peewee Migrate.
+
+### 5.4 Inserção
+
+No serviço, uma tarefa é inserida assim:
+
+```python
+with self.database.atomic():
+    task.save(force_insert=True)
+```
+
+`save` gera um `INSERT` e atualiza `task.id` com o valor gerado pelo SQLite. `force_insert=True` deixa explícito que a operação deve ser uma inserção, e não uma tentativa de atualização de um registro existente.
+
+O bloco `atomic()` abre uma transação. Se o bloco termina normalmente, a transação é confirmada. Se uma exceção ocorre, a transação é revertida.
+
+### 5.5 Consulta
+
+O serviço procura um registro com:
+
+```python
+existing = Task.get_or_none(Task.id == task.id)
+```
+
+O Peewee transforma essa expressão em uma consulta SQL parametrizada parecida com:
 
 ```sql
 SELECT id, description, priority
 FROM task
-WHERE id = ?;
+WHERE id = ?
+LIMIT 1;
 ```
 
-O valor é enviado como parâmetro, em vez de ser concatenado manualmente no SQL. Essa forma reduz riscos de injeção e mantém a consulta estruturada.
+`get_or_none` retorna um objeto `Task` quando encontra o registro e `None` quando não encontra. Por isso, o serviço pode converter ausência em `TaskNotFoundError`.
 
-Se os valores não mudaram, o serviço não executa uma atualização:
+Também é possível consultar diretamente no interpretador Python:
 
 ```python
-if existing.description == task.description and existing.priority == task.priority:
-    return
+task = Task.get_by_id(1)
+print(task.description)
 ```
 
-Se mudaram, o serviço altera a entidade existente e confirma a transação:
+### 5.6 Atualização
+
+Quando os valores mudaram, o serviço altera o objeto carregado e salva apenas as colunas modificadas:
 
 ```python
 existing.description = task.description
 existing.priority = task.priority
-self.session.commit()
+existing.save(only=[Task.description, Task.priority])
 ```
 
-Essa implementação atualiza a entidade carregada pelo banco. Ela não substitui o objeto recebido diretamente, porque o objeto recebido é um modelo temporário usado para transportar os dados validados da requisição.
+O Peewee gera um `UPDATE` usando a chave primária do objeto. O argumento `only` deixa claro que o identificador não deve ser alterado.
 
-## 5. O modelo e as validações
+Se os valores já são iguais, o serviço retorna sem executar `UPDATE`. Essa otimização preserva o comportamento da aplicação Java original.
 
-### 5.1 Construtor de `Task`
+### 5.7 Transações e rollback
 
-O construtor permite receber `description`, `priority` e opcionalmente `id`:
+O bloco:
 
 ```python
-def __init__(self, description: str, priority: int,
-             id: int | None = None, *, updating: bool = False):
+with database.atomic():
+    ...
 ```
 
-Quando `updating=True`, o identificador precisa ser positivo. Essa regra reproduz a validação da entidade Java para atualizações.
+é a forma recomendada de agrupar operações relacionadas no Peewee. Uma criação ou atualização deve ser totalmente confirmada ou totalmente desfeita.
 
-Depois, o construtor chama `validate_task`:
+No caso de um erro, o contexto `atomic()` faz rollback automaticamente. Isso é diferente do código anterior com SQLAlchemy, que exigia chamar `session.rollback()` diretamente nas rotas.
 
-```python
-validate_task(description, priority)
-```
+## 6. Validação e contrato da API
 
-A validação rejeita descrição nula, descrição que contém somente espaços, prioridade nula, prioridade booleana e prioridade negativa. A rejeição explícita de `bool` é necessária porque, em Python, `bool` é uma subclasse de `int`; sem essa verificação, `True` poderia ser aceito como prioridade `1`.
+A função `validate_task` rejeita descrição nula, descrição em branco, prioridade ausente, prioridade booleana e prioridade negativa. A função `build_task` também exige um identificador positivo quando está construindo uma atualização.
 
-### 5.2 DTO e resposta
+A validação fica fora do modelo Peewee porque os campos do ORM também podem ser usados por consultas e operações internas. `build_task` é o ponto explícito que transforma dados recebidos pela API em uma tarefa validada.
 
-A função `task_dto` converte o modelo ORM em um dicionário que representa o contrato público:
+`task_dto` limita a resposta aos campos públicos do contrato:
 
 ```python
 def task_dto(task: Task) -> dict:
@@ -441,54 +353,45 @@ def task_dto(task: Task) -> dict:
     }
 ```
 
-O `id` não é incluído no corpo porque a API original retornava apenas os campos do `TaskDto`. O identificador fica disponível no cabeçalho `Location` após a criação.
+O `id` não aparece no corpo porque a API original o comunicava pelo cabeçalho `Location` na criação.
 
-## 6. Endpoints disponíveis
+## 7. Endpoints
 
-### 6.1 Criar tarefa
-
-Requisição:
+### Criar
 
 ```http
 POST /tasks
 Content-Type: application/json
 
-{"description":"Ler a documentação","priority":2}
+{"description":"Ler Peewee","priority":2}
 ```
 
-O caminho da requisição é:
+A rota valida o corpo, constrói uma tarefa, chama `TaskService.create` e retorna `201`.
 
-1. `read_payload` verifica o cabeçalho JSON.
-2. `Task` valida os campos.
-3. `TaskService.create` faz `INSERT` e confirma a transação.
-4. A rota monta a resposta `201`.
-
-### 6.2 Atualizar tarefa
-
-Requisição:
+### Atualizar
 
 ```http
 PUT /tasks/1
 Content-Type: application/json
 
-{"description":"Ler Flask e SQLite","priority":1}
+{"description":"Ler Flask e Peewee","priority":1}
 ```
 
-A rota cria um objeto temporário com o `id` recebido na URL. O serviço consulta a tarefa existente. Se ela não existir, retorna `404`. Caso exista, os campos são comparados e eventualmente atualizados.
+A rota valida o corpo e o identificador. O serviço procura a tarefa. Se não existir, retorna `404`; caso exista, atualiza seus campos.
 
-### 6.3 Métodos que ainda não existem
+### Operações ainda não implementadas
 
-A origem na branch `main` não tinha implementação para:
+A origem não possuía:
 
-- `GET /tasks`
-- `GET /tasks/{id}`
-- `DELETE /tasks/{id}`
+- `GET /tasks`;
+- `GET /tasks/{id}`;
+- `DELETE /tasks/{id}`.
 
-Por isso, o port responde `405 Method Not Allowed` para essas operações. Essa decisão preserva o contrato da origem. Se a API precisar evoluir, essas funcionalidades podem ser adicionadas em uma mudança separada, com testes e documentação próprios.
+Elas continuam retornando `405 Method Not Allowed` para preservar o contrato original.
 
-## 7. Testes
+## 8. Testes
 
-A suíte usa `app.test_client()`, que permite enviar requisições à aplicação sem abrir uma porta TCP. O fixture `app` cria uma aplicação de teste com um arquivo SQLite temporário:
+Os testes usam `create_app` com um SQLite temporário:
 
 ```python
 @pytest.fixture
@@ -499,59 +402,57 @@ def app(tmp_path):
     })
 ```
 
-O teste de criação verifica três comportamentos: status `201`, cabeçalho `Location` e persistência real no banco. A consulta direta ao SQLAlchemy confirma que o registro foi gravado.
+O teste de criação confirma status `201`, cabeçalho `Location`, JSON e persistência real:
 
-Os testes também verificam validações, atualização, recurso inexistente e métodos não implementados:
+```python
+task = Task.get_by_id(1)
+assert task.description == "created"
+```
+
+O cliente de testes do Flask envia requisições sem abrir uma porta TCP. Assim, a suíte verifica o comportamento HTTP com rapidez e isolamento.
+
+Execute:
 
 ```bash
 pytest
 ```
 
-Uma suíte maior pode incluir testes de payload JSON inválido, prioridade decimal, concorrência, rollback e migrações. Esses casos não eram necessários para reproduzir o contrato original, mas são bons próximos exercícios.
+## 9. Comparação com Spring, SQLAlchemy e Peewee
 
-## 8. Comparação com a versão Java
+| Conceito | Spring/Java | SQLAlchemy | Peewee |
+|---|---|---|---|
+| Rota HTTP | `@PostMapping` | Função Flask | Função Flask |
+| Entidade | `@Entity` | Classe declarativa | Classe `Model` |
+| Banco | H2 | `Engine` | `SqliteDatabase` |
+| Sessão | `JpaRepository`/contexto JPA | `Session` | Conexão e `atomic()` |
+| Consulta | `findById` | `select(...).where(...)` | `get_or_none(...)` |
+| Inserção | `save` | `session.add` + `commit` | `model.save` |
+| Atualização | `save` | alterar objeto + `commit` | alterar objeto + `save` |
+| Transação | Gerenciada pelo framework | `Session` | `database.atomic()` |
 
-A correspondência conceitual entre as implementações é:
+Peewee é mais enxuto e explícito. Ele oferece menos abstrações automáticas que Spring Data, mas permite ver diretamente onde a conexão é aberta, onde a transação começa e onde o modelo é salvo.
 
-| Spring/Java | Flask/Python | Função equivalente |
-|---|---|---|
-| `@RestController` | Blueprint com funções de rota | Receber requisições HTTP |
-| `@RequestMapping("/tasks")` | `url_prefix="/tasks"` | Definir prefixo de URL |
-| `@PostMapping` | `@route(..., methods=["POST"])` | Registrar método HTTP |
-| `@RequestBody` | `request.get_json()` | Ler corpo JSON |
-| `ResponseEntity` | `jsonify(...), status` | Montar resposta e status |
-| Entidade JPA `@Entity` | Classe `Task` declarativa | Mapear objeto para tabela |
-| `JpaRepository` | `Session` + `select` | Consultar e persistir dados |
-| `@Service` | `TaskService` | Isolar regras de aplicação |
-| H2 | SQLite | Banco relacional local |
-| JUnit + Spring Test | pytest + `test_client` | Testar comportamento HTTP |
+## 10. Limitações e próximos passos
 
-A equivalência não é uma tradução linha a linha. Flask não fornece automaticamente um container de injeção, um repositório gerado ou um ciclo de vida JPA. Essas responsabilidades são explícitas no código Python.
+SQLite atende bem ao POC e ao desenvolvimento local. Para muitas escritas concorrentes ou alta disponibilidade, avalie PostgreSQL. Nesta branch, `_sqlite_path` aceita somente URLs SQLite de propósito.
 
-## 9. Limitações e próximos passos
+O servidor iniciado por `python run.py` é adequado para desenvolvimento. Em produção, use um servidor WSGI e configure logs, variáveis de ambiente, backup e migrações.
 
-O uso de `create_all` simplifica o início do POC, mas não substitui migrações. Para evolução do schema, adicione Alembic e registre cada alteração de tabela.
+Próximos exercícios recomendados:
 
-SQLite é adequado para desenvolvimento e pequenos usos locais. Em um serviço com muitas escritas concorrentes ou requisitos de alta disponibilidade, avalie PostgreSQL. O serviço já recebe a URL por configuração, então a troca pode ser feita sem alterar as rotas.
-
-A aplicação não possui autenticação, autorização, paginação ou documentação OpenAPI. Esses recursos também não existiam na branch de origem. Ao adicioná-los, mantenha testes que descrevam o novo contrato.
-
-O servidor embutido iniciado por `python run.py` é apropriado para desenvolvimento. Em produção, use um servidor WSGI, como Gunicorn, atrás de um proxy reverso e configure logs, variáveis de ambiente e políticas de backup.
-
-## 10. Exercícios sugeridos
-
-1. Implemente `GET /tasks/{id}` e adicione um teste para os casos `200` e `404`.
-2. Implemente `GET /tasks` com ordenação por `priority`.
-3. Implemente `DELETE /tasks/{id}` e defina se a resposta será `204` ou um corpo JSON.
-4. Substitua `Base.metadata.create_all` por migrações Alembic.
-5. Adicione um campo `completed` e atualize o modelo, os testes e a documentação.
-6. Execute a aplicação com um banco PostgreSQL por meio de `DATABASE_URL`.
+1. Implementar `GET /tasks/{id}` usando `Task.get_or_none`.
+2. Implementar `GET /tasks` usando `Task.select()`.
+3. Implementar `DELETE /tasks/{id}` dentro de `database.atomic()`.
+4. Adicionar uma tabela relacionada e testar `foreign_keys`.
+5. Adicionar migrações com Peewee Migrate.
+6. Adicionar índices para consultas frequentes.
 
 ## Referências
 
 [1]: https://flask.palletsprojects.com/en/stable/ "Flask Documentation"
 [2]: https://flask.palletsprojects.com/en/stable/patterns/appfactories/ "Flask Application Factories"
-[3]: https://docs.sqlalchemy.org/en/20/orm/quickstart.html "SQLAlchemy ORM Quick Start"
-[4]: https://docs.sqlalchemy.org/en/20/core/engines.html "SQLAlchemy Engine Configuration"
-[5]: https://www.sqlite.org/docs.html "SQLite Documentation"
-[6]: https://docs.pytest.org/en/stable/ "pytest Documentation"
+[3]: https://docs.peewee-orm.com/en/latest/peewee/quickstart.html "Peewee Quickstart"
+[4]: https://docs.peewee-orm.com/en/latest/peewee/database.html "Peewee Database Documentation"
+[5]: https://docs.peewee-orm.com/en/latest/peewee/transactions.html "Peewee Transactions"
+[6]: https://www.sqlite.org/docs.html "SQLite Documentation"
+[7]: https://docs.pytest.org/en/stable/ "pytest Documentation"

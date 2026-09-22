@@ -9,7 +9,7 @@ description = "Flask port of the just_to_code REST API"
 requires-python = ">=3.11"
 dependencies = [
   "Flask>=3.1,<4",
-  "SQLAlchemy>=2.0,<3",
+  "peewee>=3.17,<4",
 ]
 
 [project.optional-dependencies]
