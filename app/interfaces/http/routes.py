@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from app.usecases.domain.entities import Task, TaskValidationError
-from app.usecases.services.services import TaskNotFoundError, TaskService
+from app.application.services import TaskNotFoundError, TaskService
+from app.domain.entities import Task, TaskValidationError
 
 
 def create_tasks_blueprint(service: TaskService) -> Blueprint:
