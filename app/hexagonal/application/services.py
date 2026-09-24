@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.hexagonal.domain.entities import Task
-from app.hexagonal.ports.inbound import TaskUseCasePort
-from app.hexagonal.ports.outbound import TaskRepositoryPort
+from app.hexagonal.application.ports.inbound import TaskUseCasePort
+from app.hexagonal.application.ports.outbound import TaskRepositoryPort
 
 
 class TaskNotFoundError(LookupError):

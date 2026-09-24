@@ -16,11 +16,11 @@ Nesta branch:
 | Elemento | Caminho | Papel |
 |---|---|---|
 | Domínio | `app/hexagonal/domain/entities.py` | Regras e entidade `Task`. |
-| Porta de entrada | `app/hexagonal/ports/inbound.py` | `TaskUseCasePort`. |
-| Porta de saída | `app/hexagonal/ports/outbound.py` | `TaskRepositoryPort`. |
+| Porta de entrada | `../app/hexagonal/application/ports` | `TaskUseCasePort`. |
+| Porta de saída | `../app/hexagonal/application/ports` | `TaskRepositoryPort`. |
 | Aplicação | `app/hexagonal/application/services.py` | `TaskService`. |
-| Adaptador inbound | `app/hexagonal/adapters/inbound/http.py` | Flask e JSON. |
-| Adaptador outbound | `app/hexagonal/adapters/outbound/peewee.py` | Peewee e SQLite. |
+| Adaptador inbound | `../app/hexagonal/infrastructure/adapters` | Flask e JSON. |
+| Adaptador outbound | `../app/hexagonal/infrastructure/adapters` | Peewee e SQLite. |
 | Composição | `app/__init__.py` | Liga portas e adaptadores. |
 
 O fluxo completo de uma criação é:

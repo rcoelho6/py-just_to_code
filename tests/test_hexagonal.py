@@ -4,7 +4,7 @@ import pytest
 
 from app.hexagonal.application.services import TaskNotFoundError, TaskService
 from app.hexagonal.domain.entities import Task, TaskValidationError
-from app.hexagonal.ports.inbound import TaskUseCasePort
+from app.hexagonal.application.ports.inbound import TaskUseCasePort
 
 
 @dataclass

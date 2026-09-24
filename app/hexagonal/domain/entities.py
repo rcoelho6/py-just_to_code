@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+class TaskCreationError(Exception):
+    """Raised when a task creation errors."""
 
 class TaskValidationError(ValueError):
     """Raised when a task violates a domain invariant."""

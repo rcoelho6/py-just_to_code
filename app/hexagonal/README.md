@@ -5,11 +5,11 @@ A aplicação organiza o núcleo e os adaptadores em torno de portas. A direçã
 | Elemento | Caminho | Papel |
 |---|---|---|
 | Domínio | `domain/entities.py` | Entidade `Task` e validações. |
-| Porta de entrada | `ports/inbound.py` | `TaskUseCasePort`, contrato dos casos de uso. |
-| Porta de saída | `ports/outbound.py` | `TaskRepositoryPort`, contrato que o armazenamento deve cumprir. |
+| Porta de entrada | `application/ports` | `TaskUseCasePort`, contrato dos casos de uso. |
+| Porta de saída | `application/ports` | `TaskRepositoryPort`, contrato que o armazenamento deve cumprir. |
 | Aplicação | `application/services.py` | `TaskService`, implementação dos casos de uso. |
-| Adaptador inbound | `adapters/inbound/http.py` | Traduz HTTP/JSON para chamadas da porta de entrada. |
-| Adaptador outbound | `adapters/outbound/peewee.py` | Traduz a porta de saída para Peewee/SQLite. |
+| Adaptador inbound | `infrastructure/adapters` | Traduz HTTP/JSON para chamadas da porta de entrada. |
+| Adaptador outbound | `infrastructure/adapters` | Traduz a porta de saída para Peewee/SQLite. |
 
 A porta de entrada é chamada de **driving port**: algo externo dirige o núcleo por ela. A porta de saída é chamada de **driven port**: o núcleo a utiliza, e uma tecnologia externa a implementa. O serviço não conhece Flask; o domínio e o serviço não conhecem Peewee.
 

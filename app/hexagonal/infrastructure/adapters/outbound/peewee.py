@@ -4,7 +4,7 @@ from peewee import AutoField, Database, IntegerField, Model, TextField
 
 from app.hexagonal.application.services import TaskNotFoundError
 from app.hexagonal.domain.entities import Task
-from app.hexagonal.ports.outbound import TaskRepositoryPort
+from app.hexagonal.application.ports.outbound import TaskRepositoryPort
 
 
 class PeeweeBaseModel(Model):

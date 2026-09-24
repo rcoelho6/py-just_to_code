@@ -5,11 +5,10 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from app.hexagonal.application.services import TaskNotFoundError
-from app.hexagonal.domain.entities import Task, TaskValidationError
-from app.hexagonal.ports.inbound import TaskUseCasePort
+from app.hexagonal.domain.entities import TaskValidationError
+from app.hexagonal.infrastructure.adapters.inbound.tasks_adpter import TasksAdapter
 
-
-def create_tasks_blueprint(task_use_case: TaskUseCasePort) -> Blueprint:
+def create_tasks_blueprint(tasks_adpter: TasksAdapter) -> Blueprint:
     """Build the HTTP adapter around the driving use-case port."""
     blueprint = Blueprint("tasks", __name__, url_prefix="/tasks")
 
@@ -20,8 +19,8 @@ def create_tasks_blueprint(task_use_case: TaskUseCasePort) -> Blueprint:
         if error:
             return error
         try:
-            task = task_use_case.create(_task_from_payload(payload))
-            response = jsonify(_task_to_payload(task))
+            task = tasks_adpter.create(payload)
+            response = jsonify(task)
             response.status_code = 201
             response.headers["Location"] = f"/tasks/{task.id}"
             return response
@@ -36,9 +35,8 @@ def create_tasks_blueprint(task_use_case: TaskUseCasePort) -> Blueprint:
         if error:
             return error
         try:
-            task = _task_from_payload(payload, task_id=task_id)
-            task_use_case.update(task)
-            return jsonify(_task_to_payload(task)), 200
+            tasks_adpter.update(task_id)
+            return jsonify(payload), 200
         except TaskValidationError as exc:
             return _error_response(f"Erro with status 400: {exc}", 400)
         except TaskNotFoundError as exc:
@@ -64,18 +62,6 @@ def _read_payload() -> tuple[dict[str, Any] | None, tuple | None]:
     if not isinstance(payload, dict):
         return None, _error_response("Erro with status 400: Invalid JSON body", 400)
     return payload, None
-
-
-def _task_from_payload(payload: dict[str, Any], task_id: int | None = None) -> Task:
-    return Task(
-        id=task_id,
-        description=payload.get("description"),
-        priority=payload.get("priority"),
-    )
-
-
-def _task_to_payload(task: Task) -> dict[str, Any]:
-    return {"description": task.description, "priority": task.priority}
 
 
 def _error_response(message: str, status: int):

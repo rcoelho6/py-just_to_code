@@ -9,11 +9,11 @@ O núcleo da aplicação fica protegido por portas. Adaptadores externos depende
 | Elemento | Localização | Responsabilidade |
 |---|---|---|
 | Domínio | `app/hexagonal/domain/entities.py` | Entidade `Task` e invariantes de negócio. |
-| Porta de entrada | `app/hexagonal/ports/inbound.py` | `TaskUseCasePort`, usada por HTTP ou outros drivers. |
-| Porta de saída | `app/hexagonal/ports/outbound.py` | `TaskRepositoryPort`, usada para persistência. |
+| Porta de entrada | `app/hexagonal/application/ports` | `TaskUseCasePort`, usada por HTTP ou outros drivers. |
+| Porta de saída | `app/hexagonal/application/ports` | `TaskRepositoryPort`, usada para persistência. |
 | Aplicação | `app/hexagonal/application/services.py` | `TaskService` e regras dos casos de uso. |
-| Adaptador de entrada | `app/hexagonal/adapters/inbound/http.py` | Flask, JSON e códigos HTTP. |
-| Adaptador de saída | `app/hexagonal/adapters/outbound/peewee.py` | Peewee, SQLite e mapeamento de registros. |
+| Adaptador de entrada | `app/hexagonal/infrastructure/adapters` | Flask, JSON e códigos HTTP. |
+| Adaptador de saída | `app/hexagonal/infrastructure/adapters` | Peewee, SQLite e mapeamento de registros. |
 | Composição | `app/__init__.py` | Conecta portas aos adaptadores concretos. |
 
 O fluxo de entrada é:

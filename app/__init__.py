@@ -5,8 +5,8 @@ import os
 from flask import Flask
 from peewee import SqliteDatabase
 
-from app.hexagonal.adapters.inbound.http import create_tasks_blueprint
-from app.hexagonal.adapters.outbound.peewee import PeeweeTaskRepository, TaskRecord
+from app.hexagonal.infrastructure.adapters.inbound import create_tasks_blueprint
+from app.hexagonal.infrastructure.adapters import PeeweeTaskRepository, TaskRecord
 from app.hexagonal.application.services import TaskService
 
 

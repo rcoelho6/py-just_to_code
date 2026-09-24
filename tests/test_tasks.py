@@ -1,7 +1,7 @@
 import pytest
 
 from app import create_app
-from app.hexagonal.adapters.outbound.peewee import TaskRecord
+from app.hexagonal.infrastructure.adapters import TaskRecord
 
 
 @pytest.fixture
